@@ -6,6 +6,7 @@ Sistema de previsão de preços utilizando Deep Learning para análise e projeç
 
 - [Sobre o Projeto](#sobre-o-projeto)
 - [Arquiteturas de Redes Neurais](#arquiteturas-de-redes-neurais)
+- [Arquitetura do Código](#arquitetura-do-código)
 - [Tecnologias Utilizadas](#tecnologias-utilizadas)
 - [Configuração do Ambiente](#configuração-do-ambiente)
 - [Estrutura do Projeto](#estrutura-do-projeto)
@@ -71,6 +72,71 @@ A CNN 1D aplica filtros convolucionais para extrair padrões temporais.
 **Arquitetura:** Input(12 meses) → Conv1D(24 filtros) → MaxPooling1D → Flatten → Dense(15) → Dense(n_previsões)
 
 </div>
+
+## 🏗️ Arquitetura do Código
+
+O projeto foi estruturado seguindo boas práticas de engenharia de software, com código modular e reutilizável.
+
+### Pacotes Principais
+
+#### 📦 `src/models/` - Definições de Modelos
+
+Contém as arquiteturas das redes neurais em um módulo centralizado:
+
+```python
+from models import get_model
+
+# Obter modelo configurado
+model = get_model('RNN', look_back=12, forecast_horizon=3)
+model = get_model('LSTM', look_back=12, forecast_horizon=3)
+model = get_model('CNN', look_back=12, forecast_horizon=3)
+```
+
+**Arquivos:**
+
+- `neural_networks.py` - Implementações de RNN, LSTM e CNN
+- `__init__.py` - Exporta função factory `get_model()`
+
+#### 📦 `src/utils/` - Utilitários
+
+Funções reutilizáveis para processamento de dados e visualização:
+
+**`data_utils.py`** - Processamento e Treinamento
+
+```python
+from utils import (
+    load_data,              # Carrega dados do Excel
+    create_time_sequences,  # Cria sequências temporais
+    prepare_training_data,  # Prepara dados para treinamento
+    train_model,            # Treina o modelo
+    generate_forecast,      # Gera previsões
+    save_forecasts          # Salva resultados em JSON
+)
+```
+
+**`chart_utils.py`** - Visualização
+
+```python
+from utils import (
+    load_forecasts_for_regions,     # Carrega previsões de regiões
+    load_product_forecasts,         # Carrega previsões de produtos
+    load_product_historical_data,   # Carrega dados históricos
+    setup_plot_style,               # Configura estilo matplotlib
+    format_yticks_with_comma,       # Formata eixo Y (vírgula decimal)
+    plot_product_chart,             # Plota gráfico de produtos
+    plot_forecast_only_chart,       # Plota apenas previsões
+    save_figure                     # Salva figura PNG
+)
+```
+
+### Notebooks Otimizados
+
+Todos os notebooks foram refatorados para usar os pacotes `models/` e `utils/`:
+
+- ✅ **Código sem duplicação** - Funções reutilizadas entre notebooks
+- ✅ **Nomenclatura em inglês** - Padrão internacional para funções
+- ✅ **Configurações globais** - Parâmetros centralizados no início
+- ✅ **Modularidade** - Fácil manutenção e expansão
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -154,14 +220,21 @@ previsao_cestas/
 │   └── previsao_XXXX_completo/             # Previsões anuais completas
 ├── src/                                     # Código fonte
 │   ├── main.ipynb                           # Notebook principal de treinamento
+│   ├── models/                              # 📦 Pacote de modelos
+│   │   ├── __init__.py                      # Exporta get_model()
+│   │   └── neural_networks.py               # Arquiteturas RNN, LSTM, CNN
+│   ├── utils/                               # 📦 Pacote de utilitários
+│   │   ├── __init__.py                      # Exporta todas as funções
+│   │   ├── data_utils.py                    # Processamento e treinamento
+│   │   ├── chart_utils.py                   # Visualização de gráficos
+│   │   └── README.md                        # Documentação das funções
 │   └── graficos/                            # Notebooks de visualização
-│       ├── grafico_cesta.ipynb              # Gráfico da cesta completa
-│       ├── graficos_12_meses.ipynb          # Gráficos de 12 meses
-│       └── graficos_produtos.ipynb          # Gráficos por produto
+│       ├── graficos_3_meses.ipynb           # Gráficos de 3 meses (otimizado)
+│       ├── graficos_12_meses.ipynb          # Gráficos de 12 meses (otimizado)
+│       └── graficos_produtos.ipynb          # Gráficos por produto (legado)
 ├── tests/                                   # Testes e avaliações
 │   ├── avaliar_modelos_cv.ipynb             # Avaliação com validação cruzada
 │   └── avaliar_modelos_ultimos_3_meses_2021.ipynb
-├── configuracoes.conf                       # Configurações dos modelos
 ├── configuracoes_graficos.conf              # Configurações dos gráficos
 ├── environment.yml                          # Dependências Conda
 ├── pyproject.toml                           # Configuração do projeto (uv/pip)
@@ -172,18 +245,19 @@ previsao_cestas/
 
 ### 1. Treinamento dos Modelos
 
-#### Configurar Parâmetros
+O notebook principal foi otimizado com **variáveis globais** e funções reutilizáveis dos pacotes `models/` e `utils/`.
 
-Edite o arquivo [configuracoes.conf](configuracoes.conf):
+#### Configurar Parâmetros Globais
 
-```ini
-[DEFAULT]
-folder_path = /caminho/para/seus/dados
-file = accb_custo_total_ilheus.xlsx
-meses = 3                    # Quantidade de meses a prever (3, 6 ou 12)
-objeto = cesta basica        # Nome do objeto sendo previsto
-regiao = Ilheus              # Cidade: Ilheus ou Itabuna
-model = RNN                  # Modelo: RNN, LSTM ou CNN
+Abra [src/main.ipynb](src/main.ipynb) e ajuste as variáveis na primeira célula:
+
+```python
+# Configurações globais
+MODEL_NAME = 'RNN'          # Opções: 'RNN', 'LSTM', 'CNN'
+FORECAST_HORIZON = 3        # Meses a prever: 3, 6 ou 12
+LOOK_BACK = 12              # Janela de observação (meses)
+EPOCHS = 150                # Épocas de treinamento
+BATCH_SIZE = 1              # Tamanho do batch
 ```
 
 #### Executar Treinamento
@@ -197,53 +271,84 @@ model = RNN                  # Modelo: RNN, LSTM ou CNN
 2. Navegue até `src/` e abra [main.ipynb](src/main.ipynb)
 
 3. Execute todas as células para:
-   - Treinar o modelo selecionado
-   - Gerar previsões
-   - Salvar modelo treinado (.keras)
-   - Exportar resultados (JSON)
+   - Carregar dados automaticamente
+   - Treinar modelo selecionado usando `models.get_model()`
+   - Gerar previsões com `utils.generate_forecast()`
+   - Salvar modelos em `.keras` com `utils.save_model()`
+   - Exportar previsões em JSON com `utils.save_forecasts()`
 
 **O notebook processa automaticamente:**
 
-- ✅ Previsão da cesta básica completa
-- ✅ Previsões individuais dos 12 produtos
+- ✅ Previsão da cesta básica completa (ambas as cidades)
+- ✅ Previsões individuais dos 12 produtos (ambas as cidades)
+- ✅ Total: 26 modelos treinados por execução
 
 ### 2. Visualização dos Resultados
 
-#### Configurar Gráficos
+Os notebooks de gráficos foram **completamente otimizados** usando funções do pacote `utils/`.
 
-Edite o arquivo [configuracoes_graficos.conf](configuracoes_graficos.conf):
+#### Gráficos de 3 Meses (com histórico)
+
+**[src/graficos/graficos_3_meses.ipynb](src/graficos/graficos_3_meses.ipynb)**
+
+Exibe valores históricos (9 meses) + previsões (3 meses):
+
+```python
+# Configuração automática de yticks
+# Ajusta intervalo baseado no range (evita excesso de marcações)
+
+# Gera automaticamente:
+# - Gráfico da cesta básica (ambas as cidades)
+# - Gráficos de produtos de Ilhéus
+# - Gráficos de produtos de Itabuna
+```
+
+**Características:**
+
+- 📊 Valores reais em linhas sólidas
+- 📈 Previsões em linhas pontilhadas
+- 🎯 Anotações automáticas de valores
+- 📐 Ajuste inteligente de escala do eixo Y
+
+#### Gráficos de 12 Meses (apenas previsões)
+
+**[src/graficos/graficos_12_meses.ipynb](src/graficos/graficos_12_meses.ipynb)**
+
+Exibe apenas as previsões para o ano completo:
+
+```python
+# Usa função otimizada: plot_forecast_only_chart()
+
+# Gera automaticamente:
+# - Gráfico da cesta básica (ano completo)
+# - Produtos de Ilhéus (12 meses)
+# - Produtos de Itabuna (12 meses)
+```
+
+#### Configurações dos Gráficos
+
+Edite [configuracoes_graficos.conf](configuracoes_graficos.conf) para ajustar:
 
 ```ini
 [CESTA_BASICA]
 qtd_meses_previstos = 3
 meses_previstos = outubro, novembro, dezembro
-meses_anteriores = janeiro, fevereiro, março, abril, maio, junho, julho, agosto, setembro
-valores_reais_ilheus = [650.5, 655.3, 660.2, 665.1, 670.8, 675.5, 680.3, 685.2, 690.1]
-valores_reais_itabuna = [645.2, 650.1, 655.0, 660.3, 665.7, 670.4, 675.2, 680.1, 685.5]
+meses_anteriores = janeiro, fevereiro, ..., setembro
+valores_reais_ilheus = [650.5, 655.3, ..., 690.1]
+valores_reais_itabuna = [645.2, 650.1, ..., 685.5]
 eixo_y_limite_sup = 750
 eixo_y_limite_inf = 600
-eixo_y_varia_em = 25
-ano_previsao = 2024
+ano_previsao = 2025
 modelo_atual = RNN
 
 [PRODUTOS]
 pasta = ../../output
-# ... outras configurações de produtos
+subpasta_ios = previsoes_produtos/ilheus
+subpasta_itb = previsoes_produtos/itabuna
+subpasta_valores_reais_ios = datasets_produtos/ilheus
+subpasta_valores_reais_itb = datasets_produtos/itabuna
+eixo_y_limite_sup = 80
 ```
-
-#### Gerar Gráficos
-
-**Gráfico da Cesta Completa:**
-
-- Abra [src/graficos/grafico_cesta.ipynb](src/graficos/grafico_cesta.ipynb)
-- Execute todas as células
-- Gráfico salvo em: `output/figure/previsao_cestaBasica_*.png`
-
-**Gráficos por Produto:**
-
-- Abra [src/graficos/graficos_produtos.ipynb](src/graficos/graficos_produtos.ipynb)
-- Execute todas as células
-- Gráficos salvos em: `output/figure/produtos_ilheus/` e `output/figure/produtos_itabuna/`
 
 ### 3. Formato dos Dados de Entrada
 
@@ -264,23 +369,80 @@ Os arquivos Excel devem conter:
 
 ### Hiperparâmetros dos Modelos
 
-Os modelos utilizam os seguintes hiperparâmetros (definidos em [main.ipynb](src/main.ipynb)):
+Os modelos são configurados via variáveis globais em [main.ipynb](src/main.ipynb):
 
 ```python
-look_back = 12              # Janela de 12 meses para previsão
-forecast_horizon = 3        # Horizonte de previsão (configurável)
-epochs = 150                # Épocas de treinamento
-batch_size = 1              # Tamanho do batch
-learning_rate = 0.0003      # Taxa de aprendizado (Adam)
+# Parâmetros de treinamento
+MODEL_NAME = 'RNN'          # Modelo: RNN, LSTM ou CNN
+FORECAST_HORIZON = 3        # Horizonte: 3, 6 ou 12 meses
+LOOK_BACK = 12              # Janela temporal: 12 meses
+EPOCHS = 150                # Épocas de treinamento
+BATCH_SIZE = 1              # Tamanho do batch
+LEARNING_RATE = 0.0003      # Taxa de aprendizado (Adam optimizer)
 ```
 
-### Personalização
+### Arquiteturas dos Modelos
 
-Para ajustar os modelos, edite as funções em [main.ipynb](src/main.ipynb):
+Definidas no módulo [src/models/neural_networks.py](src/models/neural_networks.py):
 
-- `RNN_model()` - Arquitetura da RNN
-- `LSTM_model()` - Arquitetura da LSTM
-- `CNN_model()` - Arquitetura da CNN
+**RNN:**
+
+```python
+def create_rnn_model(look_back, forecast_horizon):
+    model = Sequential([
+        SimpleRNN(24, input_shape=(look_back, 1)),
+        Dense(forecast_horizon)
+    ])
+    return model
+```
+
+**LSTM:**
+
+```python
+def create_lstm_model(look_back, forecast_horizon):
+    model = Sequential([
+        LSTM(32, return_sequences=True, input_shape=(look_back, 1)),
+        LSTM(32, return_sequences=False),
+        Dense(forecast_horizon)
+    ])
+    return model
+```
+
+**CNN:**
+
+```python
+def create_cnn_model(look_back, forecast_horizon):
+    model = Sequential([
+        Conv1D(24, kernel_size=3, activation='relu', input_shape=(look_back, 1)),
+        MaxPooling1D(pool_size=2),
+        Flatten(),
+        Dense(15, activation='relu'),
+        Dense(forecast_horizon)
+    ])
+    return model
+```
+
+### Funções Utilitárias
+
+Documentação completa disponível em [src/utils/README.md](src/utils/README.md).
+
+**Principais funções:**
+
+- `load_data()` - Carrega e valida dados do Excel
+- `create_time_sequences()` - Cria janelas temporais
+- `prepare_training_data()` - Normaliza e formata dados
+- `train_model()` - Treina com early stopping
+- `generate_forecast()` - Gera previsões futuras
+- `plot_product_chart()` - Plota com histórico + previsão
+- `plot_forecast_only_chart()` - Plota apenas previsão
+
+### Personalização Avançada
+
+Para modificar arquiteturas:
+
+1. Edite `src/models/neural_networks.py`
+2. Adicione novos modelos ou ajuste camadas existentes
+3. A função `get_model()` detecta automaticamente as mudanças
 
 ## 📊 Resultados e Visualizações
 
@@ -302,10 +464,21 @@ Para ajustar os modelos, edite as funções em [main.ipynb](src/main.ipynb):
 
 Os gráficos gerados incluem:
 
-- 📈 Valores históricos (9 meses anteriores)
-- 📉 Valores previstos (3 meses futuros)
+- 📈 Valores históricos (9 meses anteriores) - *apenas gráficos de 3 meses*
+- 📉 Valores previstos (3 ou 12 meses futuros)
 - 🎨 Comparação visual entre Ilhéus e Itabuna
 - 🏷️ Anotações com valores exatos
+- 📐 Ajuste automático de escala do eixo Y (evita excesso de marcações)
+- 🎯 Títulos informativos com período e região
+
+### Otimizações de Código
+
+**Redução de código repetido:**
+
+- ~120 linhas eliminadas através de funções reutilizáveis
+- Funções centralizadas em `utils/chart_utils.py`
+- Configurações visuais globais (cores, marcadores, tamanhos)
+- Lógica inteligente de formatação de eixos
 
 ## 🛍️ Produtos Analisados
 
@@ -341,7 +514,12 @@ Este projeto está sob a licença especificada no arquivo LICENSE.
 
 - GitHub: [@matheusssilva991](https://github.com/matheusssilva991)
 
-## 🙏 Agradecimentos
+## � Documentação Adicional
+
+- [src/utils/README.md](src/utils/README.md) - Documentação completa das funções utilitárias
+- [src/models/neural_networks.py](src/models/neural_networks.py) - Arquiteturas dos modelos
+
+## �🙏 Agradecimentos
 
 - Dados coletados das cidades de Ilhéus e Itabuna, Bahia
 - Comunidade Python e TensorFlow/Keras
