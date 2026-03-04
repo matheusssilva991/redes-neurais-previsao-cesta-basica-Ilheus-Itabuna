@@ -232,10 +232,15 @@ previsao_cestas/
 │       ├── graficos_3_meses.ipynb           # Gráficos de 3 meses (otimizado)
 │       ├── graficos_12_meses.ipynb          # Gráficos de 12 meses (otimizado)
 │       └── graficos_produtos.ipynb          # Gráficos por produto (legado)
+├── config/                                  # 📦 Configurações centralizadas
+│   ├── __init__.py                          # Exporta todas as constantes
+│   ├── base.py                              # Caminhos, regiões, produtos
+│   ├── charts.py                            # Gráficos (cores, marcadores, labels)
+│   ├── models.py                            # Arquitetura de redes neurais
+│   └── training.py                          # Hiperparâmetros de treinamento
 ├── tests/                                   # Testes e avaliações
 │   ├── avaliar_modelos_cv.ipynb             # Avaliação com validação cruzada
 │   └── avaliar_modelos_ultimos_3_meses_2021.ipynb
-├── configuracoes_graficos.conf              # Configurações dos gráficos
 ├── environment.yml                          # Dependências Conda
 ├── pyproject.toml                           # Configuração do projeto (uv/pip)
 └── README.md                                # Este arquivo
@@ -325,31 +330,6 @@ Exibe apenas as previsões para o ano completo:
 # - Produtos de Itabuna (12 meses)
 ```
 
-#### Configurações dos Gráficos
-
-Edite [configuracoes_graficos.conf](configuracoes_graficos.conf) para ajustar:
-
-```ini
-[CESTA_BASICA]
-qtd_meses_previstos = 3
-meses_previstos = outubro, novembro, dezembro
-meses_anteriores = janeiro, fevereiro, ..., setembro
-valores_reais_ilheus = [650.5, 655.3, ..., 690.1]
-valores_reais_itabuna = [645.2, 650.1, ..., 685.5]
-eixo_y_limite_sup = 750
-eixo_y_limite_inf = 600
-ano_previsao = 2025
-modelo_atual = RNN
-
-[PRODUTOS]
-pasta = ../../output
-subpasta_ios = previsoes_produtos/ilheus
-subpasta_itb = previsoes_produtos/itabuna
-subpasta_valores_reais_ios = datasets_produtos/ilheus
-subpasta_valores_reais_itb = datasets_produtos/itabuna
-eixo_y_limite_sup = 80
-```
-
 ### 3. Formato dos Dados de Entrada
 
 Os arquivos Excel devem conter:
@@ -379,6 +359,66 @@ LOOK_BACK = 12              # Janela temporal: 12 meses
 EPOCHS = 150                # Épocas de treinamento
 BATCH_SIZE = 1              # Tamanho do batch
 LEARNING_RATE = 0.0003      # Taxa de aprendizado (Adam optimizer)
+```
+
+### Estrutura Modular de Configurações
+
+Todas as configurações estão centralizadas no pacote `config/` na **raiz do projeto**, organizado em módulos temáticos:
+
+#### 📦 `config/base.py` - Caminhos, Regiões e Produtos
+
+```python
+from config.base import PROJECT_ROOT, DATA_DIR, OUTPUT_DIR, REGIOES, PRODUTOS
+```
+
+Define:
+
+- Caminhos do projeto (diretórios de dados, modelos, saídas)
+- Regiões analisadas (ilheus, itabuna)
+- Produtos da cesta (açúcar, arroz, banana, etc.)
+
+#### 📦 `config/charts.py` - Configurações de Gráficos
+
+```python
+from config.charts import CHART_PRODUCTS_MARKERS, CHART_CESTA_COLORS_REAL, CHART_MONTH_LABELS_PT
+```
+
+Define:
+
+- Cores, marcadores e tamanhos para gráficos
+- Labels e quantidades de produtos
+- Configurações visuais (DPI, tamanho de figura)
+
+#### 📦 `config/models.py` - Arquiteturas de Redes Neurais
+
+```python
+from config.models import RNN_UNITS, LSTM_UNITS_1, CNN_FILTERS
+```
+
+Define:
+
+- Unidades/filtros de cada camada
+- Arquitetura de RNN, LSTM e CNN
+
+#### 📦 `config/training.py` - Hiperparâmetros de Treinamento
+
+```python
+from config.training import DEFAULT_EPOCHS, DEFAULT_BATCH_SIZE, DEFAULT_LEARNING_RATE
+```
+
+Define:
+
+- Épocas, tamanho de batch, taxa de aprendizado
+- Look back, horizonte de previsão
+- Fator de normalização
+
+#### 📦 `config/__init__.py` - Importação Centralizada
+
+Para importação simples de qualquer parte do código:
+
+```python
+# Importa qualquer constante mantendo simplicidade
+from config import CHART_PRODUCTS_MARKERS, RNN_UNITS, DATA_DIR, REGIOES
 ```
 
 ### Arquiteturas dos Modelos

@@ -1,0 +1,107 @@
+# Configurações de Modelos de Previsão
+# Este arquivo YAML centraliza configurações de hiperparâmetros e treinamento
+
+# Configuração de modelos
+models:
+  RNN:
+    description: "Rede Neural Recorrente Simples"
+    units: 24
+    stateful: false
+    default_learning_rate: 0.0003
+    recommended_for: "Previsões de curto prazo com padrões simples"
+
+  LSTM:
+    description: "Long Short-Term Memory (memória de longo prazo)"
+    units_layer1: 32
+    units_layer2: 32
+    stateful_layer1: false
+    stateful_layer2: true
+    return_sequences_layer1: true
+    default_learning_rate: 0.0003
+    recommended_for: "Previsões complexas com dependências de longo prazo"
+
+  CNN:
+    description: "Rede Neural Convolucional 1D"
+    filters: 24
+    kernel_size: 3
+    pool_size: 2
+    dense_units: 15
+    activation: "tanh"
+    default_learning_rate: 0.0003
+    recommended_for: "Detectar padrões e tendências em séries temporais"
+
+# Hiperparâmetros de treinamento
+training:
+  default:
+    look_back: 12 # Janela temporal de entrada (meses)
+    epochs: 150 # Número de épocas
+    batch_size: 1 # Tamanho do batch
+    normalization_factor: 1000 # Fator de normalização
+    loss: "mean_squared_error" # Função de perda
+    optimizer: "Adam" # Otimizador
+
+  horizons:
+    short_term: 3 # Previsão de curto prazo (3 meses)
+    medium_term: 6 # Previsão de médio prazo (6 meses)
+    long_term: 12 # Previsão de longo prazo (12 meses)
+
+# Regiões e produtos
+regions:
+  - ilheus
+  - itabuna
+
+products:
+  - acucar
+  - arroz
+  - banana
+  - cafe
+  - carne
+  - farinha
+  - feijao
+  - leite
+  - manteiga
+  - oleo
+  - pao
+  - tomate
+
+# Quantidades dos produtos na cesta básica (kg ou L)
+product_quantities:
+  acucar: 3.0 # kg
+  arroz: 3.0 # kg
+  banana: 90.0 # unidades (convertido para kg)
+  cafe: 0.3 # kg
+  carne: 6.0 # kg
+  farinha: 1.5 # kg
+  feijao: 4.5 # kg
+  leite: 7.5 # L
+  manteiga: 0.75 # kg
+  oleo: 0.9 # L
+  pao: 6.0 # kg
+  tomate: 9.0 # kg
+
+# Configurações de visualização
+visualization:
+  chart_figsize: [15, 5] # Tamanho padrão das figuras (largura, altura)
+  chart_dpi: 300 # Resolução (dots per inch)
+  grid_alpha: 0.5 # Transparência da grade
+
+  # Cores para gráficos
+  colors:
+    historical: ["#1f77b4", "#ff7f0e", "#2ca02c"] # Azul, laranja, verde
+    forecast: ["#d62728", "#9467bd", "#8c564b"] # Vermelho, roxo, marrom
+
+  # Marcadores
+  markers: ["o", "s", "^", "D", "v", "p", "*", "h", "x", "+", "|", "_"]
+
+# Configurações de saída
+output:
+  models_dir: "output/models"
+  forecasts_cesta_dir: "output/previsoes_cesta"
+  forecasts_produtos_dir: "output/previsoes_produtos"
+  figures_dir: "output/figure"
+
+# Configurações de logging
+logging:
+  level: "INFO" # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
