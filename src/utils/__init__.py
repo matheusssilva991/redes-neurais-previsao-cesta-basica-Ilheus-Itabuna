@@ -23,7 +23,6 @@ from .data_utils import (
 
 from .chart_utils import (
     PlotConfig,
-    month_to_number,
     extract_dates_from_dataframe,
     derive_month_labels_from_history,
     load_forecast_from_json,
@@ -51,7 +50,6 @@ __all__ = [
     "save_forecasts",
     # Chart utilities
     "PlotConfig",
-    "month_to_number",
     "extract_dates_from_dataframe",
     "derive_month_labels_from_history",
     "load_forecast_from_json",

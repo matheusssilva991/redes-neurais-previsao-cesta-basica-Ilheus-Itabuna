@@ -109,6 +109,11 @@ def cli():
 @click.option(
     "--verbose", "-v", is_flag=True, help="Mostrar progresso detalhado do treinamento"
 )
+@click.option(
+    "--save-onnx",
+    is_flag=True,
+    help="Exportar modelos também em formato ONNX (.onnx)",
+)
 def train(
     model: str,
     horizon: str,
@@ -117,6 +122,7 @@ def train(
     epochs: int,
     learning_rate: float,
     verbose: bool,
+    save_onnx: bool,
 ):
     """
     Treina modelos de previsão e gera previsões.
@@ -144,17 +150,30 @@ def train(
     click.echo(f"Tipo: {forecast_type}")
     click.echo(f"Épocas: {epochs}")
     click.echo(f"Learning Rate: {learning_rate}")
+    click.echo(f"Salvar ONNX: {'sim' if save_onnx else 'não'}")
     click.echo(f"{'=' * 70}\n")
 
     try:
         if forecast_type in ["cesta", "both"]:
             _train_cesta_basica(
-                model, regions, forecast_horizon, epochs, learning_rate, verbose
+                model,
+                regions,
+                forecast_horizon,
+                epochs,
+                learning_rate,
+                verbose,
+                save_onnx,
             )
 
         if forecast_type in ["produtos", "both"]:
             _train_produtos(
-                model, regions, forecast_horizon, epochs, learning_rate, verbose
+                model,
+                regions,
+                forecast_horizon,
+                epochs,
+                learning_rate,
+                verbose,
+                save_onnx,
             )
 
         click.echo(f"\n{'=' * 70}")
@@ -174,6 +193,7 @@ def _train_cesta_basica(
     epochs: int,
     learning_rate: float,
     verbose: bool,
+    save_onnx: bool,
 ):
     """Treina modelos para previsão da cesta básica."""
     click.echo("\n📦 TREINANDO CESTA BÁSICA")
@@ -212,7 +232,14 @@ def _train_cesta_basica(
             bar.update(epochs)
 
         # Salvar modelo
-        save_model(model, model_name, regiao, "cesta_basica", forecast_horizon)
+        save_model(
+            model,
+            model_name,
+            regiao,
+            "cesta_basica",
+            forecast_horizon,
+            save_onnx=save_onnx,
+        )
 
         # Gerar e salvar previsões
         results = generate_forecast(model, X_val, batch_size=DEFAULT_BATCH_SIZE)
@@ -238,6 +265,7 @@ def _train_produtos(
     epochs: int,
     learning_rate: float,
     verbose: bool,
+    save_onnx: bool,
 ):
     """Treina modelos para previsão de produtos individuais."""
     click.echo("\n🛍️  TREINANDO PRODUTOS INDIVIDUAIS")
@@ -290,6 +318,7 @@ def _train_produtos(
                     produto,
                     forecast_horizon,
                     subdir="produtos",
+                    save_onnx=save_onnx,
                 )
 
                 # Gerar e salvar previsões

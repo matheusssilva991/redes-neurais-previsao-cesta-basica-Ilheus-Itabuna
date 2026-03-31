@@ -8,7 +8,7 @@ Este módulo fornece funções para:
 - Salvar figuras em alta resolução
 """
 
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Tuple
 from pathlib import Path
 from dataclasses import dataclass
 import json
@@ -63,69 +63,21 @@ class PlotConfig:
     limite_y: int
 
 
-def month_to_number(value: Any) -> Optional[int]:
-    """
-    Converte representação de mês para número (1-12).
-
-    Aceita valores numéricos e textos em português (abreviado/completo).
-    """
-    if pd.isna(value):
-        return None
-
-    if isinstance(value, (int, float)):
-        month = int(value)
-        return month if 1 <= month <= 12 else None
-
-    text = str(value).strip().lower()
-    mapping = {
-        "jan": 1,
-        "janeiro": 1,
-        "fev": 2,
-        "fevereiro": 2,
-        "mar": 3,
-        "marco": 3,
-        "março": 3,
-        "abr": 4,
-        "abril": 4,
-        "mai": 5,
-        "maio": 5,
-        "jun": 6,
-        "junho": 6,
-        "jul": 7,
-        "julho": 7,
-        "ago": 8,
-        "agosto": 8,
-        "set": 9,
-        "setembro": 9,
-        "out": 10,
-        "outubro": 10,
-        "nov": 11,
-        "novembro": 11,
-        "dez": 12,
-        "dezembro": 12,
-    }
-    return mapping.get(text[:3], mapping.get(text))
-
-
 def extract_dates_from_dataframe(df: pd.DataFrame) -> Optional[List[pd.Timestamp]]:
     """
-    Extrai datas mensais de um DataFrame com colunas `ano` e `mes`.
+    Extrai datas mensais de um DataFrame.
+
+    Aceita apenas coluna `ano` com datas mensais (datetime),
+    como por exemplo `01/03/2026`.
     """
-    if not {"ano", "mes"}.issubset(df.columns):
+    if "ano" not in df.columns:
         return None
 
-    years = df["ano"].tolist()
-    months = [month_to_number(month) for month in df["mes"].tolist()]
-    if any(month is None for month in months):
+    parsed = pd.to_datetime(df["ano"], errors="coerce")
+    if not parsed.notna().all():
         return None
 
-    try:
-        return [
-            pd.Timestamp(year=int(year), month=int(month), day=1)
-            for year, month in zip(years, months)
-        ]
-    except Exception:
-        return None
+    return [date.replace(day=1) for date in parsed.tolist()]
 
 
 def derive_month_labels_from_history(
@@ -147,10 +99,9 @@ def derive_month_labels_from_history(
     if dates and len(dates) >= hist_months:
         history_dates = dates[-hist_months:]
     else:
-        # Usar o mês anterior (último mês completo) em vez de hoje
-        last_complete_month = pd.Timestamp.today().replace(day=1) - pd.DateOffset(
-            months=1
-        )
+        # Quando não há coluna de data mensal válida no dataset, assume que a
+        # série histórica já inclui o mês corrente.
+        last_complete_month = pd.Timestamp.today().replace(day=1)
         history_dates = list(
             pd.date_range(end=last_complete_month, periods=hist_months, freq="MS")
         )

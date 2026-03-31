@@ -12,10 +12,9 @@ Este módulo fornece funções para:
 from typing import List, Tuple, Optional, Union
 from pathlib import Path
 import json
-import os
 
 import pandas as pd
-import numpy as np
+import tempfile
 from numpy.typing import NDArray
 from keras.models import Sequential
 from keras.callbacks import History
@@ -293,12 +292,14 @@ def save_model(
     object_name: str,
     forecast_horizon: int,
     subdir: Optional[str] = None,
+    save_onnx: bool = False,
 ) -> Path:
     """
     Salva um modelo Keras treinado em disco.
 
     O modelo é salvo no formato .keras (recomendado) no diretório de saída
     organizado por região e (opcionalmente) subdiretório.
+    Opcionalmente, também exporta para ONNX no mesmo diretório.
 
     Args:
         model (Sequential): Modelo Keras treinado
@@ -308,6 +309,8 @@ def save_model(
         forecast_horizon (int): Horizonte de previsão (3, 6, 12, etc.)
         subdir (str, optional): Subdiretório adicional (ex: 'produtos').
                                Padrão: None.
+        save_onnx (bool, optional): Se True, também exporta modelo para .onnx.
+                       Padrão: False.
 
     Returns:
         Path: Caminho completo do arquivo salvo
@@ -328,6 +331,7 @@ def save_model(
 
     Notes:
         - Formato .keras é mais robusto que .h5
+        - Exportação ONNX usa tf2onnx quando save_onnx=True
         - Cria diretórios automaticamente se não existirem
         - Sobrescreve arquivo se já existir
     """
@@ -350,10 +354,46 @@ def save_model(
     try:
         logger.info(f"Salvando modelo em: {model_file}")
         model.save(model_file)
-        logger.info(f"Modelo salvo com sucesso")
+        logger.info("Modelo salvo com sucesso")
     except Exception as e:
         logger.error(f"Erro ao salvar modelo: {e}")
         raise
+
+    if save_onnx:
+        onnx_file = model_file.with_suffix(".onnx")
+        try:
+            import tf2onnx
+
+            logger.info(f"Exportando modelo ONNX em: {onnx_file}")
+            try:
+                # Conversão direta costuma funcionar para a maioria dos modelos.
+                tf2onnx.convert.from_keras(model, output_path=str(onnx_file))
+            except Exception as convert_error:
+                if "keras_tensor" not in str(convert_error).lower():
+                    raise
+
+                # Fallback para casos de incompatibilidade de nomes de tensores
+                # entre Keras e tf2onnx (ex.: 'keras_tensor_3').
+                logger.info(
+                    "Conversão direta falhou por mapeamento de tensores. "
+                    "Tentando via SavedModel..."
+                )
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    model.export(tmp_dir)
+                    tf2onnx.convert.from_saved_model(
+                        tmp_dir,
+                        output_path=str(onnx_file),
+                    )
+
+            logger.info("Modelo ONNX salvo com sucesso")
+        except ImportError:
+            logger.warning(
+                "Pacote 'tf2onnx' não encontrado. Pulando exportação ONNX. "
+                "Instale com: pip install tf2onnx"
+            )
+        except Exception as e:
+            logger.warning(f"Falha ao exportar ONNX ({onnx_file.name}): {e}")
 
     return model_file
 

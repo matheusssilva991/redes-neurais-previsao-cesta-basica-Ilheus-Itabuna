@@ -10,4 +10,8 @@ dependencies:
   - tensorflow
   - ipykernel
   - openpyxl
+  - pip
+  - pip:
+      - onnx
+      - tf2onnx
 prefix: C:\Users\mathe\miniconda3\envs\cesta
