@@ -9,11 +9,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 DATA_DIR = PROJECT_ROOT / "data"
 OUTPUT_DIR = PROJECT_ROOT / "output"
-
-# Diretórios de dados
-DATA_PRODUTOS_DIR = DATA_DIR / "datasets_produtos"
-DATA_ILHEUS_DIR = DATA_PRODUTOS_DIR / "ilheus"
-DATA_ITABUNA_DIR = DATA_PRODUTOS_DIR / "itabuna"
+MASTER_DATA_FILE = DATA_DIR / "precos_mensais.xlsx"
 
 # Diretórios de saída
 MODELS_DIR = OUTPUT_DIR / "models"

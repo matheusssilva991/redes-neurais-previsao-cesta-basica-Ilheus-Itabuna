@@ -28,7 +28,8 @@ from config import (
     PRODUTOS_QUANTIDADES,
     DEFAULT_NORMALIZATION_FACTOR,
 )
-from utils.logger import setup_logger
+from .logger import setup_logger
+from .monthly_data import load_price_series
 
 logger = setup_logger(__name__)
 
@@ -67,13 +68,15 @@ def extract_dates_from_dataframe(df: pd.DataFrame) -> Optional[List[pd.Timestamp
     """
     Extrai datas mensais de um DataFrame.
 
-    Aceita apenas coluna `ano` com datas mensais (datetime),
-    como por exemplo `01/03/2026`.
+    Aceita coluna `data` da tabela única ou a coluna histórica `ano`.
     """
-    if "ano" not in df.columns:
+    date_column = (
+        "data" if "data" in df.columns else "ano" if "ano" in df.columns else None
+    )
+    if date_column is None:
         return None
 
-    parsed = pd.to_datetime(df["ano"], errors="coerce")
+    parsed = pd.to_datetime(df[date_column], errors="coerce")
     if not parsed.notna().all():
         return None
 
@@ -422,7 +425,15 @@ def format_yticks_with_comma(
 
 
 def add_forecast_annotation(
-    ax: Axes, x: float, y: float, value: float, offset: float = 5, va: str = "bottom"
+    ax: Axes,
+    x: float,
+    y: float,
+    value: float,
+    offset: float = 8,
+    va: str = "bottom",
+    x_offset: float = 0,
+    color: str = "black",
+    boxed: bool = False,
 ) -> None:
     """
     Adiciona anotação de valor a um ponto de previsão.
@@ -432,8 +443,11 @@ def add_forecast_annotation(
         x (float): Coordenada X do ponto
         y (float): Coordenada Y do ponto
         value (float): Valor a exibir na anotação
-        offset (float, optional): Deslocamento vertical em pontos. Padrão: 5.
+        offset (float, optional): Deslocamento vertical em pontos. Padrão: 8.
         va (str, optional): Alinhamento vertical ('top' ou 'bottom'). Padrão: 'bottom'.
+        x_offset (float, optional): Deslocamento horizontal em pontos. Padrão: 0.
+        color (str, optional): Cor do texto. Padrão: 'black'.
+        boxed (bool, optional): Se True, usa fundo claro para legibilidade.
 
     Examples:
         >>> fig, ax = setup_plot_style()
@@ -449,14 +463,26 @@ def add_forecast_annotation(
         - Tamanho da fonte: 13
         - Alinhamento horizontal: centralizado
     """
-    y_position = y + offset if va == "bottom" else y - offset
+    y_offset = offset if va == "bottom" else -offset
+    bbox = None
+    if boxed:
+        bbox = {
+            "boxstyle": "round,pad=0.18",
+            "facecolor": "white",
+            "edgecolor": "none",
+            "alpha": 0.82,
+        }
 
     ax.annotate(
         format(value, ".2f").replace(".", ","),
-        (x, y_position),
+        xy=(x, y),
+        xytext=(x_offset, y_offset),
+        textcoords="offset points",
         size=13,
         va=va,
         ha="center",
+        color=color,
+        bbox=bbox,
     )
 
 
@@ -510,11 +536,11 @@ def load_product_historical_data(
     n_months: int = 9,
 ) -> Dict[str, List[float]]:
     """
-    Carrega dados históricos de produtos de arquivos Excel.
+    Carrega dados históricos de produtos da tabela única.
 
     Args:
-        data_folder (str | Path): Caminho da pasta base de dados
-        sub_pasta (str): Nome do subdiretório (ex: 'datasets_produtos/ilheus')
+        data_folder (str | Path): Mantido por compatibilidade; não é mais usado.
+        sub_pasta (str): Mantido por compatibilidade; não é mais usado.
         region (str): Nome da região ('ilheus' ou 'itabuna')
         products (List[str]): Lista de produtos a carregar
         quantities (Dict[str, float], optional): Quantidades dos produtos.
@@ -526,12 +552,11 @@ def load_product_historical_data(
                                listas de valores normalizados por quantidade.
 
     Raises:
-        FileNotFoundError: Se arquivo de algum produto não existir
         ValueError: Se produto não estiver em quantities
 
     Examples:
         >>> historico = load_product_historical_data(
-        ...     "../data", "datasets_produtos/ilheus", "ilheus",
+        ...     "../data", "", "ilheus",
         ...     ["arroz", "feijao"], n_months=6
         ... )
         >>> historico
@@ -540,18 +565,11 @@ def load_product_historical_data(
 
     Notes:
         - Valores são divididos pela quantidade do produto
-        - Lê arquivos Excel no formato: {produto}_{regiao}.xlsx
-        - Espera coluna 'preco' no Excel
+        - Lê os dados de data/precos_mensais.xlsx
     """
     if quantities is None:
         quantities = PRODUTOS_QUANTIDADES
         logger.debug("Usando quantidades padrão de PRODUTOS_QUANTIDADES")
-
-    path = Path(data_folder)
-    data_path = path / sub_pasta
-
-    if not data_path.exists():
-        raise FileNotFoundError(f"Diretório não encontrado: {data_path}")
 
     logger.info(
         f"Carregando histórico: região={region}, produtos={len(products)}, "
@@ -566,18 +584,8 @@ def load_product_historical_data(
                 f"Disponíveis: {list(quantities.keys())}"
             )
 
-        file_path = data_path / f"{product}_{region}.xlsx"
-
-        if not file_path.exists():
-            logger.error(f"Arquivo não encontrado: {file_path}")
-            raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
-
         try:
-            df = pd.read_excel(file_path)
-
-            if "preco" not in df.columns:
-                raise ValueError(f"Coluna 'preco' não encontrada em {file_path}")
-
+            df = load_price_series(region, product)
             values = df["preco"].tail(n_months).to_list()
             # Normalize by quantity
             values = [v / quantities[product] for v in values]
@@ -586,7 +594,7 @@ def load_product_historical_data(
             logger.debug(f"Produto '{product}' carregado: {len(values)} valores")
 
         except Exception as e:
-            logger.error(f"Erro ao processar {file_path}: {e}")
+            logger.error(f"Erro ao processar {region}/{product}: {e}")
             raise
 
     logger.info(f"Histórico carregado: {len(results)} produtos")

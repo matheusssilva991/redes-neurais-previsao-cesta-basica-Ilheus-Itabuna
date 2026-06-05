@@ -80,6 +80,9 @@ target/
 .ipynb_checkpoints
 /.ipynb_checkpoints
 
+# Office temporary lock files
+.~lock.*#
+
 # IPython
 profile_default/
 ipython_config.py

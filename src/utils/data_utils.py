@@ -2,7 +2,7 @@
 Utility functions for preprocessing and training models.
 
 Este módulo fornece funções para:
-- Carregar e preprocessar dados de Excel
+- Carregar e preprocessar séries da tabela única
 - Criar sequências temporais para treinamento
 - Preparar dados no formato Keras
 - Treinar modelos
@@ -13,8 +13,8 @@ from typing import List, Tuple, Optional, Union
 from pathlib import Path
 import json
 
+import numpy as np
 import pandas as pd
-import tempfile
 from numpy.typing import NDArray
 from keras.models import Sequential
 from keras.callbacks import History
@@ -27,7 +27,8 @@ from config import (
     FORECASTS_DIR,
     FORECASTS_PRODUTOS_DIR,
 )
-from utils.logger import setup_logger
+from .logger import setup_logger
+from .monthly_data import PRODUCT_CESTA_BASICA, load_price_series
 
 logger = setup_logger(__name__)
 
@@ -57,7 +58,7 @@ def load_data(
                    as colunas necessárias
 
     Examples:
-        >>> df = load_data("../data/accb_custo_total_ilheus.xlsx")
+        >>> df = load_unified_data("ilheus", "cesta_basica")
         >>> df.head()
            mes    preco
         0  jan   0.550  # Normalizado (550 / 1000)
@@ -95,6 +96,36 @@ def load_data(
         logger.debug(f"Dados normalizados por fator {normalization_factor}")
 
     logger.info(f"Dados carregados com sucesso: {len(df)} registros")
+    return df
+
+
+def load_unified_data(
+    city: str,
+    product: str = PRODUCT_CESTA_BASICA,
+    normalize: bool = True,
+    normalization_factor: int = DEFAULT_NORMALIZATION_FACTOR,
+) -> pd.DataFrame:
+    """
+    Carrega uma série mensal a partir de data/precos_mensais.xlsx.
+
+    Args:
+        city: Cidade da série, como ``ilheus`` ou ``itabuna``.
+        product: Produto da série. Use ``cesta_basica`` para o total da cesta.
+        normalize: Se True, divide os preços pelo fator de normalização.
+        normalization_factor: Fator usado na normalização.
+
+    Returns:
+        DataFrame ordenado com colunas ``data`` e ``preco``.
+    """
+    logger.info(f"Carregando serie unificada: cidade={city}, produto={product}")
+    df = load_price_series(city, product)
+
+    if normalize:
+        df = df.copy()
+        df["preco"] = df["preco"] / normalization_factor
+        logger.debug(f"Dados normalizados por fator {normalization_factor}")
+
+    logger.info(f"Serie carregada com sucesso: {len(df)} registros")
     return df
 
 
@@ -145,21 +176,49 @@ def create_time_sequences(
         f"Criando sequências temporais: look_back={look_back}, horizon={forecast_horizon}"
     )
 
-    # Criar cópia para não modificar original
-    df = df.copy()
+    sequence_df = df.sort_values("data") if "data" in df.columns else df.copy()
+    sequence_df = sequence_df.loc[:, ["preco"]].copy()
+    sequence_df.reset_index(drop=True, inplace=True)
 
     for n_step in range(1, look_back + forecast_horizon):
-        df[f"preco t(h + {n_step})"] = df["preco"].shift(-n_step).values
+        sequence_df[f"preco t(h + {n_step})"] = sequence_df["preco"].shift(-n_step)
 
-    df.dropna(inplace=True)
-    df.reset_index(drop=True, inplace=True)
+    sequence_df.dropna(inplace=True)
+    sequence_df.reset_index(drop=True, inplace=True)
 
-    logger.info(f"Sequências criadas: {len(df)} amostras, {len(df.columns)} features")
-    return df
+    logger.info(
+        f"Sequências criadas: {len(sequence_df)} amostras, "
+        f"{len(sequence_df.columns)} features"
+    )
+    return sequence_df
+
+
+def _build_supervised_windows(
+    prices: NDArray, look_back: int, forecast_horizon: int
+) -> Tuple[NDArray, NDArray, NDArray]:
+    """Build train and validation windows from a 1D price series."""
+    if len(prices) < look_back + forecast_horizon:
+        raise ValueError(
+            f"Serie insuficiente: precisa de pelo menos {look_back + forecast_horizon} "
+            f"observacoes, recebeu {len(prices)}"
+        )
+
+    n_samples = len(prices) - look_back - forecast_horizon + 1
+    X_train = np.empty((n_samples, look_back, 1), dtype=np.float32)
+    y_train = np.empty((n_samples, forecast_horizon), dtype=np.float32)
+
+    for index in range(n_samples):
+        X_train[index, :, 0] = prices[index : index + look_back]
+        y_train[index, :] = prices[
+            index + look_back : index + look_back + forecast_horizon
+        ]
+
+    X_val = prices[-look_back:].reshape(1, look_back, 1)
+    return X_train, y_train, X_val
 
 
 def prepare_training_data(
-    df: pd.DataFrame, look_back: int
+    df: pd.DataFrame, look_back: int, forecast_horizon: Optional[int] = None
 ) -> Tuple[NDArray, NDArray, NDArray]:
     """
     Prepara dados no formato Keras separando features (X) e targets (y).
@@ -173,6 +232,8 @@ def prepare_training_data(
         df (pd.DataFrame): DataFrame com sequências temporais criadas por
                           create_time_sequences()
         look_back (int): Tamanho da janela temporal de entrada
+        forecast_horizon (int, optional): Quantos meses futuros prever.
+                          Se não informado, tenta inferir do DataFrame.
 
     Returns:
         Tuple[NDArray, NDArray, NDArray]: Tupla contendo:
@@ -185,7 +246,9 @@ def prepare_training_data(
 
     Examples:
         >>> df_sequences = create_time_sequences(df, look_back=3, forecast_horizon=1)
-        >>> X_train, y_train, X_val = prepare_training_data(df_sequences, look_back=3)
+        >>> X_train, y_train, X_val = prepare_training_data(
+        ...     df_sequences, look_back=3, forecast_horizon=1
+        ... )
         >>> X_train.shape
         (n_samples, 3, 1)
 
@@ -197,21 +260,46 @@ def prepare_training_data(
     if look_back <= 0:
         raise ValueError(f"look_back deve ser > 0, recebido: {look_back}")
 
-    if len(df.columns) < look_back:
-        raise ValueError(
-            f"DataFrame deve ter pelo menos {look_back} colunas, "
-            f"tem apenas {len(df.columns)}"
-        )
+    if "preco" not in df.columns:
+        raise ValueError("DataFrame deve conter coluna 'preco'")
+
+    price_columns = [column for column in df.columns if column != "data"]
+
+    if forecast_horizon is None:
+        forecast_horizon = len(price_columns) - look_back
+        if forecast_horizon <= 0:
+            raise ValueError(
+                "forecast_horizon precisa ser informado quando o DataFrame nao "
+                "permite inferencia"
+            )
+
+    if forecast_horizon <= 0:
+        raise ValueError(f"forecast_horizon deve ser > 0, recebido: {forecast_horizon}")
 
     logger.info(f"Preparando dados para treinamento: look_back={look_back}")
 
-    X_train = df.iloc[:, :look_back].values
-    y_train = df.iloc[:, look_back:].values
-    X_val = df.iloc[-1:, -12:].values
+    if len(price_columns) >= look_back + forecast_horizon:
+        supervised_df = df.loc[:, price_columns[: look_back + forecast_horizon]].apply(
+            pd.to_numeric, errors="coerce"
+        )
+        if supervised_df.isna().any().any():
+            raise ValueError("Colunas de preco contem valores invalidos")
 
-    # Reshape to Keras format (batches, timesteps, features)
-    X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-    X_val = X_val.reshape((X_val.shape[0], X_val.shape[1], 1))
+        X_train = supervised_df.iloc[:, :look_back].values
+        y_train = supervised_df.iloc[:, look_back : look_back + forecast_horizon].values
+        X_val = supervised_df.iloc[-1:, -look_back:].values
+
+        X_train = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
+        X_val = X_val.reshape((X_val.shape[0], X_val.shape[1], 1))
+    else:
+        ordered_df = df.sort_values("data") if "data" in df.columns else df
+        prices = pd.to_numeric(ordered_df["preco"], errors="coerce")
+        if prices.isna().any():
+            raise ValueError("Coluna 'preco' contem valores invalidos")
+
+        X_train, y_train, X_val = _build_supervised_windows(
+            prices.to_numpy(dtype=np.float32), look_back, forecast_horizon
+        )
 
     logger.info(
         f"Dados preparados: X_train={X_train.shape}, "
@@ -376,15 +464,10 @@ def save_model(
                 # entre Keras e tf2onnx (ex.: 'keras_tensor_3').
                 logger.info(
                     "Conversão direta falhou por mapeamento de tensores. "
-                    "Tentando via SavedModel..."
+                    "Tentando via tf.function..."
                 )
 
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    model.export(tmp_dir)
-                    tf2onnx.convert.from_saved_model(
-                        tmp_dir,
-                        output_path=str(onnx_file),
-                    )
+                _export_onnx_from_function(model, onnx_file)
 
             logger.info("Modelo ONNX salvo com sucesso")
         except ImportError:
@@ -396,6 +479,42 @@ def save_model(
             logger.warning(f"Falha ao exportar ONNX ({onnx_file.name}): {e}")
 
     return model_file
+
+
+def _export_onnx_from_function(model: Sequential, output_path: Path) -> None:
+    """Export a Keras model to ONNX through tf.function."""
+    import tensorflow as tf
+    import tf2onnx
+
+    input_shape = _get_static_input_shape(model)
+    input_signature = [
+        tf.TensorSpec(input_shape, tf.float32, name="input"),
+    ]
+
+    @tf.function(input_signature=input_signature)
+    @tf.autograph.experimental.do_not_convert
+    def predict(inputs):
+        return model(inputs, training=False)
+
+    tf2onnx.convert.from_function(
+        predict,
+        input_signature=input_signature,
+        output_path=str(output_path),
+    )
+
+
+def _get_static_input_shape(model: Sequential) -> tuple[int, ...]:
+    """Return a concrete input shape for ONNX export."""
+    input_shape = model.input_shape
+    if isinstance(input_shape, list):
+        input_shape = input_shape[0]
+
+    if input_shape is None:
+        raise ValueError("Modelo sem input_shape definido para exportacao ONNX")
+
+    return tuple(
+        1 if dimension is None else int(dimension) for dimension in input_shape
+    )
 
 
 def generate_forecast(

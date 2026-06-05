@@ -105,12 +105,48 @@ Funções reutilizáveis para processamento de dados e visualização:
 
 ```python
 from utils import (
-    load_data,              # Carrega dados do Excel
+    load_unified_data,      # Carrega séries da tabela única
     create_time_sequences,  # Cria sequências temporais
     prepare_training_data,  # Prepara dados para treinamento
     train_model,            # Treina o modelo
     generate_forecast,      # Gera previsões
     save_forecasts          # Salva resultados em JSON
+)
+```
+
+**`monthly_data.py`** - Tabela única mensal
+
+```python
+from utils import load_price_series, add_or_update_prices
+
+# Lê uma série diretamente de data/precos_mensais.xlsx
+df = load_price_series("ilheus", "cesta_basica")
+```
+
+**`boletim_data.py`** - Importação de boletins DOCX
+
+```python
+from utils.boletim_data import extract_prices_from_boletim
+
+boletim = extract_prices_from_boletim("previsoes_boletim/202605")
+```
+
+**`training_workflow.py`** - Fluxo compacto de treino e previsão
+
+```python
+from utils import train_and_forecast
+
+summary = train_and_forecast(
+    region="ilheus",
+    series_name="cesta_basica",
+    forecast_type="cesta",
+    model_name="RNN",
+    look_back=12,
+    forecast_horizon=3,
+    epochs=150,
+    batch_size=1,
+    save_onnx=True,
+    silence_training=True,
 )
 ```
 
@@ -136,6 +172,7 @@ Todos os notebooks foram refatorados para usar os pacotes `models/` e `utils/`:
 - ✅ **Código sem duplicação** - Funções reutilizadas entre notebooks
 - ✅ **Nomenclatura em inglês** - Padrão internacional para funções
 - ✅ **Configurações globais** - Parâmetros centralizados no início
+- ✅ **Saída de treino compacta** - `main.ipynb` mostra resumos em tabela
 - ✅ **Modularidade** - Fácil manutenção e expansão
 
 ## 🛠️ Tecnologias Utilizadas
@@ -195,9 +232,7 @@ Todos os notebooks foram refatorados para usar os pacotes `models/` e `utils/`:
 ```text
 previsao_cestas/
 ├── data/                                    # Dados de entrada
-│   └── datasets_produtos/                   # Datasets por produto e cidade
-│       ├── ilheus/                          # Dados de Ilhéus
-│       └── itabuna/                         # Dados de Itabuna
+│   └── precos_mensais.xlsx                  # Tabela única mensal
 ├── img/                                     # Imagens das arquiteturas
 │   ├── RedeRNN.png
 │   ├── RedeLSTM.png
@@ -219,28 +254,32 @@ previsao_cestas/
 │   ├── 2022/, 2023/, 2024/, 2025/          # Organizados por ano e mês
 │   └── previsao_XXXX_completo/             # Previsões anuais completas
 ├── src/                                     # Código fonte
+│   ├── atualizar_precos.py                  # Inserção mensal na tabela única
+│   ├── importar_boletim.py                  # Importação automática via DOCX
 │   ├── main.ipynb                           # Notebook principal de treinamento
 │   ├── models/                              # 📦 Pacote de modelos
 │   │   ├── __init__.py                      # Exporta get_model()
 │   │   └── neural_networks.py               # Arquiteturas RNN, LSTM, CNN
 │   ├── utils/                               # 📦 Pacote de utilitários
 │   │   ├── __init__.py                      # Exporta todas as funções
+│   │   ├── boletim_data.py                  # Leitura de boletins DOCX
 │   │   ├── data_utils.py                    # Processamento e treinamento
 │   │   ├── chart_utils.py                   # Visualização de gráficos
-│   │   └── README.md                        # Documentação das funções
+│   │   ├── monthly_data.py                  # Tabela única mensal
+│   │   └── training_workflow.py             # Fluxo treino + previsão
 │   └── graficos/                            # Notebooks de visualização
 │       ├── graficos_3_meses.ipynb           # Gráficos de 3 meses (otimizado)
-│       ├── graficos_12_meses.ipynb          # Gráficos de 12 meses (otimizado)
-│       └── graficos_produtos.ipynb          # Gráficos por produto (legado)
+│       └── graficos_12_meses.ipynb          # Gráficos de 12 meses (otimizado)
 ├── config/                                  # 📦 Configurações centralizadas
 │   ├── __init__.py                          # Exporta todas as constantes
 │   ├── base.py                              # Caminhos, regiões, produtos
 │   ├── charts.py                            # Gráficos (cores, marcadores, labels)
 │   ├── models.py                            # Arquitetura de redes neurais
 │   └── training.py                          # Hiperparâmetros de treinamento
-├── tests/                                   # Testes e avaliações
-│   ├── avaliar_modelos_cv.ipynb             # Avaliação com validação cruzada
-│   └── avaliar_modelos_ultimos_3_meses_2021.ipynb
+├── tests/                                   # Testes automatizados
+│   ├── test_boletim_data.py                 # Extração do DOCX
+│   ├── test_data_utils.py                   # Janelas temporais
+│   └── test_monthly_data.py                 # Tabela única e datas
 ├── environment.yml                          # Dependências Conda
 ├── pyproject.toml                           # Configuração do projeto (uv/pip)
 └── README.md                                # Este arquivo
@@ -248,21 +287,88 @@ previsao_cestas/
 
 ## 🚀 Como Usar
 
-### 1. Treinamento dos Modelos
+### 1. Atualização Mensal dos Dados
 
-O notebook principal foi otimizado com **variáveis globais** e funções reutilizáveis dos pacotes `models/` e `utils/`.
+Os dados principais ficam em uma tabela única:
+
+```text
+data/precos_mensais.xlsx
+```
+
+Ela usa uma linha por mês, cidade e produto:
+
+| data       | cidade  | produto      | preco  |
+|------------|---------|--------------|--------|
+| 2026-01-01 | ilheus  | cesta_basica | 641.82 |
+| 2026-01-31 | ilheus  | arroz        | 16.67  |
+| 2026-01-31 | itabuna | arroz        | 13.64  |
+
+A coluna `data` respeita o padrao historico dos arquivos: a cesta basica usa o
+dia 01 do mes, e os produtos usam o ultimo dia real do mes. Assim, fevereiro de
+produto vira `2026-02-28` ou `2024-02-29`, abril vira `2026-04-30`, e datas
+antigas como `31-02-2026` deixam de ser usadas.
+
+#### Inserir um novo mês
+
+Se o boletim do mês estiver em `.docx`, coloque o arquivo na pasta do mês em
+`previsoes_boletim`, por exemplo:
+
+```text
+previsoes_boletim/202605/boletim-maio-2026.docx
+```
+
+Depois rode primeiro em modo de prévia:
+
+```bash
+uv run importar-boletim previsoes_boletim/202605
+```
+
+Se os valores estiverem corretos, aplique a atualização:
+
+```bash
+uv run importar-boletim previsoes_boletim/202605 --aplicar
+```
+
+O importador lê o total da cesta básica e a coluna `Gasto <mês> (R$)` dos
+produtos. Arquivos antigos em RTF/DOC devem ser convertidos para DOCX antes da
+importação automática.
+
+Se precisar inserir os valores manualmente, abra
+[src/atualizar_precos.py](src/atualizar_precos.py), altere:
+
+```python
+MES_REFERENCIA = "2026-05"
+```
+
+Depois preencha os valores em `PRECOS_MENSAIS`. Use números como `12.34` ou
+texto com vírgula como `"12,34"`. Em seguida, rode:
+
+```bash
+uv run atualizar-precos
+```
+
+Se você rodar o script duas vezes para o mesmo mês, cidade e produto, ele
+substitui o valor anterior. Isso permite corrigir um preço sem criar duplicatas.
+
+### 2. Treinamento dos Modelos
+
+O notebook principal foi otimizado com **variáveis globais em inglês**, saída
+compacta e o helper `utils.train_and_forecast()`, que concentra carregamento,
+janela temporal, treino, salvamento do modelo e exportação das previsões.
 
 #### Configurar Parâmetros Globais
 
 Abra [src/main.ipynb](src/main.ipynb) e ajuste as variáveis na primeira célula:
 
 ```python
-# Configurações globais
-MODEL_NAME = 'RNN'          # Opções: 'RNN', 'LSTM', 'CNN'
-FORECAST_HORIZON = 3        # Meses a prever: 3, 6 ou 12
-LOOK_BACK = 12              # Janela de observação (meses)
-EPOCHS = 150                # Épocas de treinamento
-BATCH_SIZE = 1              # Tamanho do batch
+# Global settings
+MODEL_NAME = "RNN"          # Options: "RNN", "LSTM", "CNN"
+FORECAST_HORIZON = 3        # Months to forecast: 3 or 12
+LOOK_BACK = 12              # Observation window in months
+EPOCHS = 150                # Training epochs
+BATCH_SIZE = 1              # Batch size
+SAVE_ONNX = True            # Also export ONNX models
+SILENCE_TRAINING = True     # Keep notebook output compact
 ```
 
 #### Executar Treinamento
@@ -276,11 +382,11 @@ BATCH_SIZE = 1              # Tamanho do batch
 2. Navegue até `src/` e abra [main.ipynb](src/main.ipynb)
 
 3. Execute todas as células para:
-   - Carregar dados automaticamente
-   - Treinar modelo selecionado usando `models.get_model()`
-   - Gerar previsões com `utils.generate_forecast()`
-   - Salvar modelos em `.keras` com `utils.save_model()`
-   - Exportar previsões em JSON com `utils.save_forecasts()`
+   - Carregar séries de `data/precos_mensais.xlsx`
+   - Treinar o modelo selecionado
+   - Salvar modelos em `.keras` e opcionalmente `.onnx`
+   - Exportar previsões em JSON
+   - Exibir um resumo em tabela com amostras, `final_loss` e previsões
 
 **O notebook processa automaticamente:**
 
@@ -288,7 +394,13 @@ BATCH_SIZE = 1              # Tamanho do batch
 - ✅ Previsões individuais dos 12 produtos (ambas as cidades)
 - ✅ Total: 26 modelos treinados por execução
 
-### 2. Visualização dos Resultados
+Também é possível treinar pela CLI:
+
+```bash
+uv run previsao-cestas train --model RNN --horizon 3 --region both --forecast-type both
+```
+
+### 3. Visualização dos Resultados
 
 Os notebooks de gráficos foram **completamente otimizados** usando funções do pacote `utils/`.
 
@@ -330,40 +442,51 @@ Exibe apenas as previsões para o ano completo:
 # - Produtos de Itabuna (12 meses)
 ```
 
-### 3. Formato dos Dados de Entrada
+### 4. Formato dos Dados de Entrada
 
-Os arquivos Excel devem conter:
+O formato principal recomendado é a tabela única:
 
-| ano  | preco  |
-|------|--------|
-| 2020 | 650.50 |
-| 2020 | 655.30 |
-| ...  | ...    |
+| data       | cidade | produto      | preco  |
+|------------|--------|--------------|--------|
+| 2026-01-01 | ilheus | cesta_basica | 641.82 |
+| 2026-01-31 | ilheus | arroz        | 16.67  |
+| ...        | ...    | ...          | ...    |
 
 **Colunas necessárias:**
 
-- `ano` - Ano da observação
+- `data` - Dia 01 para `cesta_basica`; ultimo dia real do mes para produtos
+- `cidade` - `ilheus` ou `itabuna`
+- `produto` - `cesta_basica` ou um dos produtos em `config/base.py`
 - `preco` - Valor em Reais
+
+Os scripts de treino e importação leem essa tabela diretamente. Os Excel
+separados antigos não fazem mais parte do fluxo.
 
 ## ⚙️ Configurações
 
 ### Hiperparâmetros dos Modelos
 
-Os modelos são configurados via variáveis globais em [main.ipynb](src/main.ipynb):
+O treino pelo notebook é configurado por variáveis globais em
+[main.ipynb](src/main.ipynb):
 
 ```python
-# Parâmetros de treinamento
-MODEL_NAME = 'RNN'          # Modelo: RNN, LSTM ou CNN
-FORECAST_HORIZON = 3        # Horizonte: 3, 6 ou 12 meses
-LOOK_BACK = 12              # Janela temporal: 12 meses
-EPOCHS = 150                # Épocas de treinamento
-BATCH_SIZE = 1              # Tamanho do batch
-LEARNING_RATE = 0.0003      # Taxa de aprendizado (Adam optimizer)
+MODEL_NAME = "RNN"
+FORECAST_HORIZON = 3
+LOOK_BACK = 12
+EPOCHS = 150
+BATCH_SIZE = 1
+SAVE_ONNX = True
+SILENCE_TRAINING = True
 ```
+
+Parâmetros padrão compartilhados, como taxa de aprendizado, ficam em
+`config/training.py`.
 
 ### Estrutura Modular de Configurações
 
-Todas as configurações estão centralizadas no pacote `config/` na **raiz do projeto**, organizado em módulos temáticos:
+Todas as configurações estão centralizadas em Python no pacote `config/` na
+**raiz do projeto**, organizado em módulos temáticos. O projeto não usa mais um
+arquivo YAML separado para configuração, evitando duplicidade entre fontes.
 
 #### 📦 `config/base.py` - Caminhos, Regiões e Produtos
 
@@ -464,14 +587,14 @@ def create_cnn_model(look_back, forecast_horizon):
 
 ### Funções Utilitárias
 
-Documentação completa disponível em [src/utils/README.md](src/utils/README.md).
-
 **Principais funções:**
 
-- `load_data()` - Carrega e valida dados do Excel
+- `load_unified_data()` - Carrega séries da tabela única
 - `create_time_sequences()` - Cria janelas temporais
 - `prepare_training_data()` - Normaliza e formata dados
-- `train_model()` - Treina com early stopping
+- `train_model()` - Treina o modelo Keras
+- `train_and_forecast()` - Executa o fluxo completo de treino e previsão
+- `extract_prices_from_boletim()` - Extrai preços de boletins DOCX
 - `generate_forecast()` - Gera previsões futuras
 - `plot_product_chart()` - Plota com histórico + previsão
 - `plot_forecast_only_chart()` - Plota apenas previsão
@@ -494,7 +617,8 @@ Para modificar arquiteturas:
 
 2. **Previsões** (JSON)
    - Localização: `output/previsoes_cesta/` ou `output/previsoes_produtos/`
-   - Formato: `{"objeto": "[valor1, valor2, valor3]"}`
+   - Formato: `{"objeto": [valor1, valor2, valor3]}`
+   - Valores salvos normalizados, seguindo o mesmo fator usado no treino
 
 3. **Gráficos** (PNG)
    - Localização: `output/figure/`
@@ -517,6 +641,7 @@ Os gráficos gerados incluem:
 
 - ~120 linhas eliminadas através de funções reutilizáveis
 - Funções centralizadas em `utils/chart_utils.py`
+- Fluxo de treino centralizado em `utils/training_workflow.py`
 - Configurações visuais globais (cores, marcadores, tamanhos)
 - Lógica inteligente de formatação de eixos
 
@@ -554,12 +679,14 @@ Este projeto está sob a licença especificada no arquivo LICENSE.
 
 - GitHub: [@matheusssilva991](https://github.com/matheusssilva991)
 
-## � Documentação Adicional
+## 📚 Documentação Adicional
 
-- [src/utils/README.md](src/utils/README.md) - Documentação completa das funções utilitárias
+- [src/utils/training_workflow.py](src/utils/training_workflow.py) - Fluxo compacto de treino e previsão
+- [src/utils/monthly_data.py](src/utils/monthly_data.py) - Tabela única mensal
+- [src/utils/boletim_data.py](src/utils/boletim_data.py) - Extração de dados dos boletins DOCX
 - [src/models/neural_networks.py](src/models/neural_networks.py) - Arquiteturas dos modelos
 
-## �🙏 Agradecimentos
+## 🙏 Agradecimentos
 
 - Dados coletados das cidades de Ilhéus e Itabuna, Bahia
 - Comunidade Python e TensorFlow/Keras

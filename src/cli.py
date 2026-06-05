@@ -6,13 +6,12 @@ Este script permite treinar modelos de previsão via terminal, oferecendo
 uma alternativa ao Jupyter Notebook para automação e integração CI/CD.
 
 Uso básico:
-    python src/cli.py train --model RNN --horizon 3 --region ilheus
+    uv run previsao-cestas train --model RNN --horizon 3 --region ilheus
 
 Para ajuda:
-    python src/cli.py --help
+    uv run previsao-cestas --help
 """
 
-from typing import List
 from pathlib import Path
 import sys
 
@@ -26,16 +25,6 @@ except ImportError:
     print("Instale com: pip install click")
     sys.exit(1)
 
-from models import get_model
-from utils import (
-    load_data,
-    create_time_sequences,
-    prepare_training_data,
-    train_model,
-    save_model,
-    generate_forecast,
-    save_forecasts,
-)
 from utils.logger import setup_logger
 from config import (
     REGIOES,
@@ -44,8 +33,15 @@ from config import (
     DEFAULT_EPOCHS,
     DEFAULT_BATCH_SIZE,
     DEFAULT_LEARNING_RATE,
-    DATA_DIR,
+    DEFAULT_NORMALIZATION_FACTOR,
     PROJECT_ROOT,
+    RNN_UNITS,
+    LSTM_UNITS_1,
+    LSTM_UNITS_2,
+    CNN_FILTERS,
+    CNN_KERNEL_SIZE,
+    CNN_POOL_SIZE,
+    CNN_DENSE_UNITS,
 )
 
 logger = setup_logger(__name__)
@@ -130,13 +126,13 @@ def train(
     Exemplos:
 
         # Treinar RNN para cesta básica de ambas regiões (3 meses)
-        $ python src/cli.py train --model RNN --horizon 3 --region both
+        $ uv run previsao-cestas train --model RNN --horizon 3 --region both
 
         # Treinar LSTM para produtos de Ilhéus (12 meses)
-        $ python src/cli.py train -m LSTM -h 12 -r ilheus -t produtos
+        $ uv run previsao-cestas train -m LSTM -h 12 -r ilheus -t produtos
 
         # CNN com configurações customizadas
-        $ python src/cli.py train -m CNN -e 200 -lr 0.001 -v
+        $ uv run previsao-cestas train -m CNN -e 200 -lr 0.001 -v
     """
     forecast_horizon = int(horizon)
     regions = REGIOES if region == "both" else [region]
@@ -188,7 +184,7 @@ def train(
 
 def _train_cesta_basica(
     model_name: str,
-    regions: List[str],
+    regions: list[str],
     forecast_horizon: int,
     epochs: int,
     learning_rate: float,
@@ -202,57 +198,22 @@ def _train_cesta_basica(
     for regiao in regions:
         click.echo(f"📍 Região: {regiao.upper()}")
 
-        # Carregar dados
-        data_path = DATA_DIR / f"accb_custo_total_{regiao}.xlsx"
-
-        if not data_path.exists():
-            click.echo(f"  ⚠️  Arquivo não encontrado: {data_path}", err=True)
-            continue
-
-        df = load_data(data_path)
-        df = create_time_sequences(df, DEFAULT_LOOK_BACK, forecast_horizon)
-        X_train, y_train, X_val = prepare_training_data(df, DEFAULT_LOOK_BACK)
-
-        # Criar e treinar modelo
-        model = get_model(
-            model_name, DEFAULT_LOOK_BACK, forecast_horizon, learning_rate
-        )
-
         with click.progressbar(
             length=epochs, label=f"  Treinando {model_name}", show_percent=True
         ) as bar:
-            train_model(
-                model,
-                X_train,
-                y_train,
+            results = _train_single_series(
+                model_name=model_name,
+                region=regiao,
+                object_name="cesta_basica",
+                forecast_horizon=forecast_horizon,
                 epochs=epochs,
-                batch_size=DEFAULT_BATCH_SIZE,
-                verbose=1 if verbose else 0,
+                learning_rate=learning_rate,
+                verbose=verbose,
+                save_onnx=save_onnx,
+                forecast_type="cesta",
             )
             bar.update(epochs)
 
-        # Salvar modelo
-        save_model(
-            model,
-            model_name,
-            regiao,
-            "cesta_basica",
-            forecast_horizon,
-            save_onnx=save_onnx,
-        )
-
-        # Gerar e salvar previsões
-        results = generate_forecast(model, X_val, batch_size=DEFAULT_BATCH_SIZE)
-        save_forecasts(
-            results,
-            model_name,
-            "cesta_basica",
-            regiao,
-            forecast_horizon,
-            forecast_type="cesta",
-        )
-
-        # Mostrar previsões
         results_reais = [r * 1000 for r in results]
         click.echo("  ✅ Treinado e salvo")
         click.echo(f"  📊 Previsões: {[round(r, 2) for r in results_reais]}\n")
@@ -260,7 +221,7 @@ def _train_cesta_basica(
 
 def _train_produtos(
     model_name: str,
-    regions: List[str],
+    regions: list[str],
     forecast_horizon: int,
     epochs: int,
     learning_rate: float,
@@ -283,57 +244,86 @@ def _train_produtos(
             click.echo(f"\n📍 Região: {regiao.upper()}")
 
             for produto in PRODUTOS:
-                # Carregar dados
-                data_path = (
-                    DATA_DIR / "datasets_produtos" / regiao / f"{produto}_{regiao}.xlsx"
-                )
-
-                if not data_path.exists():
-                    click.echo(f"  ⚠️  {produto}: arquivo não encontrado", err=True)
-                    bar.update(1)
-                    continue
-
-                df = load_data(data_path)
-                df = create_time_sequences(df, DEFAULT_LOOK_BACK, forecast_horizon)
-                X_train, y_train, X_val = prepare_training_data(df, DEFAULT_LOOK_BACK)
-
-                # Criar e treinar modelo
-                model = get_model(
-                    model_name, DEFAULT_LOOK_BACK, forecast_horizon, learning_rate
-                )
-                train_model(
-                    model,
-                    X_train,
-                    y_train,
+                _train_single_series(
+                    model_name=model_name,
+                    region=regiao,
+                    object_name=produto,
+                    forecast_horizon=forecast_horizon,
                     epochs=epochs,
-                    batch_size=DEFAULT_BATCH_SIZE,
-                    verbose=1 if verbose else 0,
-                )
-
-                # Salvar modelo
-                save_model(
-                    model,
-                    model_name,
-                    regiao,
-                    produto,
-                    forecast_horizon,
-                    subdir="produtos",
+                    learning_rate=learning_rate,
+                    verbose=verbose,
                     save_onnx=save_onnx,
-                )
-
-                # Gerar e salvar previsões
-                results = generate_forecast(model, X_val, batch_size=DEFAULT_BATCH_SIZE)
-                save_forecasts(
-                    results,
-                    model_name,
-                    produto,
-                    regiao,
-                    forecast_horizon,
                     forecast_type="produtos",
+                    subdir="produtos",
                 )
 
                 click.echo(f"  ✅ {produto.capitalize()}")
                 bar.update(1)
+
+
+def _train_single_series(
+    *,
+    model_name: str,
+    region: str,
+    object_name: str,
+    forecast_horizon: int,
+    epochs: int,
+    learning_rate: float,
+    verbose: bool,
+    save_onnx: bool,
+    forecast_type: str,
+    subdir: str | None = None,
+) -> list[float]:
+    """Treina uma serie temporal e persiste modelo e previsao."""
+    from models import get_model
+    from utils.data_utils import (
+        create_time_sequences,
+        generate_forecast,
+        load_unified_data,
+        prepare_training_data,
+        save_forecasts,
+        save_model,
+        train_model,
+    )
+
+    df = load_unified_data(region, object_name)
+    df = create_time_sequences(df, DEFAULT_LOOK_BACK, forecast_horizon)
+    X_train, y_train, X_val = prepare_training_data(
+        df,
+        DEFAULT_LOOK_BACK,
+        forecast_horizon,
+    )
+
+    model = get_model(model_name, DEFAULT_LOOK_BACK, forecast_horizon, learning_rate)
+    train_model(
+        model,
+        X_train,
+        y_train,
+        epochs=epochs,
+        batch_size=DEFAULT_BATCH_SIZE,
+        verbose=1 if verbose else 0,
+    )
+
+    save_model(
+        model,
+        model_name,
+        region,
+        object_name,
+        forecast_horizon,
+        subdir=subdir,
+        save_onnx=save_onnx,
+    )
+
+    results = generate_forecast(model, X_val, batch_size=DEFAULT_BATCH_SIZE)
+    save_forecasts(
+        results,
+        model_name,
+        object_name,
+        region,
+        forecast_horizon,
+        forecast_type=forecast_type,
+    )
+    return results
 
 
 @cli.command()
@@ -349,7 +339,7 @@ def list_models(region: str):
     Lista modelos treinados disponíveis.
 
     Exemplo:
-        $ python src/cli.py list-models --region ilheus
+        $ uv run previsao-cestas list-models --region ilheus
     """
     from config import MODELS_DIR
 
@@ -394,8 +384,6 @@ def info():
     """
     Mostra informações sobre o projeto e configurações.
     """
-    import yaml
-
     click.echo(f"\n{'=' * 70}")
     click.echo("ℹ️  INFORMAÇÕES DO PROJETO")
     click.echo(f"{'=' * 70}\n")
@@ -406,21 +394,18 @@ def info():
     click.echo("📈 Modelos disponíveis: RNN, LSTM, CNN")
     click.echo("⏱️  Horizontes de previsão: 3, 6, 12 meses")
 
-    # Tentar ler configurações do YAML
-    config_file = PROJECT_ROOT / "config" / "models.yaml"
-    if config_file.exists():
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                config = yaml.safe_load(f)
-                click.echo(f"\n📝 Configuração carregada de: {config_file}")
-                click.echo(
-                    f"   Look back: {config['training']['default']['look_back']} meses"
-                )
-                click.echo(
-                    f"   Épocas padrão: {config['training']['default']['epochs']}"
-                )
-        except Exception as e:
-            click.echo(f"\n⚠️  Erro ao ler configuração: {e}", err=True)
+    click.echo("\n📝 Configuração carregada de: config/*.py")
+    click.echo(f"   Look back: {DEFAULT_LOOK_BACK} meses")
+    click.echo(f"   Épocas padrão: {DEFAULT_EPOCHS}")
+    click.echo(f"   Batch size: {DEFAULT_BATCH_SIZE}")
+    click.echo(f"   Learning rate: {DEFAULT_LEARNING_RATE}")
+    click.echo(f"   Fator de normalização: {DEFAULT_NORMALIZATION_FACTOR}")
+    click.echo(f"   RNN units: {RNN_UNITS}")
+    click.echo(f"   LSTM units: {LSTM_UNITS_1}, {LSTM_UNITS_2}")
+    click.echo(
+        f"   CNN: filters={CNN_FILTERS}, kernel={CNN_KERNEL_SIZE}, "
+        f"pool={CNN_POOL_SIZE}, dense={CNN_DENSE_UNITS}"
+    )
 
     click.echo(f"\n{'=' * 70}\n")
 
