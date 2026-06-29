@@ -310,6 +310,31 @@ antigas como `31-02-2026` deixam de ser usadas.
 
 #### Inserir um novo mês
 
+Hoje a entrada de dados novos funciona de dois jeitos:
+
+- `uv run importar-boletim`: fluxo semiautomatico. Le um boletim em `.docx`,
+  extrai os valores do mes e, se voce confirmar com `--aplicar`, atualiza
+  `data/precos_mensais.xlsx`.
+- `uv run atualizar-precos`: fluxo manual. Voce preenche os valores direto no
+  arquivo Python e o script grava esse mes na mesma planilha.
+
+O projeto nao usa um banco relacional nesse passo. A fonte oficial de dados
+mensais usada por treino, previsoes e graficos e a planilha
+`data/precos_mensais.xlsx`.
+
+Fluxo do `importar-boletim`:
+
+1. O comando recebe um arquivo ou uma pasta dentro de `previsoes_boletim`.
+2. Se receber uma pasta, ele procura o boletim mais recente ali.
+3. O importador aceita `docx`; arquivos `rtf` e `doc` precisam ser convertidos.
+4. O parser extrai:
+   - a linha da cesta basica para o mes de referencia;
+   - a tabela de gasto mensal dos produtos de Ilheus;
+   - a tabela de gasto mensal dos produtos de Itabuna.
+5. Sem `--aplicar`, ele mostra uma previa tabular.
+6. Com `--aplicar`, ele insere ou substitui os registros daquele
+   `mes + cidade + produto` na tabela unica.
+
 Se o boletim do mês estiver em `.docx`, coloque o arquivo na pasta do mês em
 `previsoes_boletim`, por exemplo:
 
@@ -332,6 +357,15 @@ uv run importar-boletim previsoes_boletim/202605 --aplicar
 O importador lê o total da cesta básica e a coluna `Gasto <mês> (R$)` dos
 produtos. Arquivos antigos em RTF/DOC devem ser convertidos para DOCX antes da
 importação automática.
+
+Fluxo do `atualizar-precos`:
+
+1. Abra [src/atualizar_precos.py](/home/matheus/workspace/previsao_cestas/src/atualizar_precos.py).
+2. Ajuste `MES_REFERENCIA`.
+3. Preencha todo o dicionario `PRECOS_MENSAIS`.
+4. Rode `uv run atualizar-precos`.
+5. O script valida se nenhum produto ficou faltando e depois atualiza a mesma
+   tabela `data/precos_mensais.xlsx`.
 
 Se precisar inserir os valores manualmente, abra
 [src/atualizar_precos.py](src/atualizar_precos.py), altere:

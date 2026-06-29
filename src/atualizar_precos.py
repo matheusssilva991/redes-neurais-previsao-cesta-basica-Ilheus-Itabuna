@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
 """
-Manual monthly price entry.
+Insercao manual de um novo mes em ``data/precos_mensais.xlsx``.
 
-How to use:
-1. Change MES_REFERENCIA to the month you are adding, in YYYY-MM format.
-2. Fill every price in PRECOS_MENSAIS.
-3. Run: uv run atualizar-precos
+Quando usar:
+- Use este script se ainda nao existir um boletim em ``.docx`` pronto para
+  importacao automatica, ou se voce quiser corrigir um valor manualmente.
+- O script nao baixa arquivos e nao le tabelas externas. Ele usa somente o
+  mes em ``MES_REFERENCIA`` e os valores preenchidos em ``PRECOS_MENSAIS``.
 
-The script updates ``data/precos_mensais.xlsx``.
+Fluxo:
+1. Ajuste ``MES_REFERENCIA`` no formato ``YYYY-MM``.
+2. Preencha todos os precos de Ilheus e Itabuna em ``PRECOS_MENSAIS``.
+3. Rode ``uv run atualizar-precos``.
+
+Comportamento:
+- O arquivo ``data/precos_mensais.xlsx`` e carregado.
+- Cada combinacao de data/cidade/produto do mes informado e inserida ou
+  substituida.
+- Se o mes ja existir, os registros antigos daquele mes sao trocados pelos
+  novos, evitando duplicatas.
 """
 
 from pathlib import Path
@@ -27,13 +38,18 @@ from utils.monthly_data import (  # noqa: E402
 )
 
 
-# Change this value every month. Use YYYY-MM; the script will store the real
-# last day of that month, for example 2026-02 -> 2026-02-28.
+# Mes de referencia da atualizacao manual.
+# Use sempre YYYY-MM. A funcao de persistencia converte esse rotulo para a
+# convencao do projeto:
+# - cesta_basica => primeiro dia do mes
+# - demais produtos => ultimo dia real do mes
 MES_REFERENCIA = "2026-05"
 
 
-# Fill the prices below. Use numbers such as 12.34, or strings such as "12,34".
-# Keep every product key so the monthly update is complete and auditable.
+# Preencha todos os valores do mes.
+# Aceita float/int (12.34) ou string com virgula ("12,34").
+# Nao remova chaves: a validacao exige o mes completo para manter a tabela
+# auditavel e consistente entre cidades e produtos.
 PRECOS_MENSAIS = {
     "ilheus": {
         "cesta_basica": None,
@@ -76,13 +92,16 @@ def main() -> None:
 
 
 def _main() -> None:
+    # Garante que o payload manual esteja completo antes de tocar no Excel.
     validate_complete_month(PRECOS_MENSAIS)
 
+    # Carrega a tabela historica, aplica o mes informado e salva a versao limpa.
     df = load_master_table(MASTER_DATA_FILE)
     df = add_or_update_prices(df, MES_REFERENCIA, PRECOS_MENSAIS)
     save_master_table(df, MASTER_DATA_FILE)
 
     month_date = normalize_month(MES_REFERENCIA)
+    # Resume apenas o recorte do mes atualizado para facilitar a conferencia.
     rows_for_month = df.loc[
         df["data"].apply(
             lambda value: value.year == month_date.year
