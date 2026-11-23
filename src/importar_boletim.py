@@ -40,10 +40,14 @@ from utils.monthly_data import (  # noqa: E402
 
 
 def main() -> None:
+    """Mostra os preços extraídos e atualiza a planilha com `--aplicar`.
+
+    Raises:
+        SystemExit: Ao encerrar pelo argparse ou ao encontrar um caminho
+            ausente, dados inválidos ou um formato de boletim incompatível.
+    """
     try:
         args = _parse_args()
-        # Extrai o mes inteiro a partir do boletim indicado ou do boletim mais
-        # recente encontrado na pasta informada.
         bulletin = extract_prices_from_boletim(args.entrada, month=args.mes)
         _print_preview(bulletin)
 
@@ -52,8 +56,6 @@ def main() -> None:
             print("Para atualizar os dados, rode novamente com --aplicar.")
             return
 
-        # A gravacao reaproveita a mesma rotina da insercao manual, entao
-        # repeticoes do mesmo mes substituem os valores anteriores.
         df = load_master_table(MASTER_DATA_FILE)
         df = add_or_update_prices(df, bulletin.month_label, bulletin.prices)
         save_master_table(df, MASTER_DATA_FILE)
@@ -65,6 +67,15 @@ def main() -> None:
 
 
 def _parse_args() -> argparse.Namespace:
+    """Lê as opções de importação do boletim na linha de comando.
+
+    Returns:
+        Namespace com o caminho `entrada`, o mês opcional `mes` e a
+        opção booleana `aplicar`.
+
+    Raises:
+        SystemExit: Se a ajuda for solicitada ou os argumentos forem inválidos.
+    """
     parser = argparse.ArgumentParser(
         description=(
             "Importa precos mensais a partir de um boletim DOCX e, opcionalmente, "
@@ -97,6 +108,12 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _print_preview(bulletin) -> None:
+    """Imprime os preços da cesta e dos produtos do boletim por cidade.
+
+    Args:
+        bulletin: Resultado da extração com arquivo de origem, mês e
+            preços completos de Ilhéus e Itabuna.
+    """
     products = [PRODUCT_CESTA_BASICA, *PRODUTOS]
     print(f"Arquivo lido: {bulletin.source_file}")
     print(f"Mes identificado: {bulletin.month_label}")

@@ -23,17 +23,52 @@ MASTER_COLUMNS = ["data", "cidade", "produto", "preco"]
 
 
 def month_end(year: int, month: int) -> date:
-    """Return the real last day for a month."""
+    """Retorna o último dia do mês, considerando anos bissextos.
+
+    Args:
+        year: Ano civil.
+        month: Número do mês, de 1 a 12.
+
+    Returns:
+        Data do último dia do mês.
+
+    Raises:
+        ValueError: Se o mês estiver fora de 1 a 12 ou o ano for inválido.
+    """
     return date(year, month, calendar.monthrange(year, month)[1])
 
 
 def month_start(year: int, month: int) -> date:
-    """Return the first day for a month."""
+    """Retorna o primeiro dia do mês para o ano e mês informados.
+
+    Args:
+        year: Ano civil.
+        month: Número do mês, de 1 a 12.
+
+    Returns:
+        Data do primeiro dia do mês.
+
+    Raises:
+        ValueError: Se o ano ou o mês for inválido.
+    """
     return date(year, month, 1)
 
 
 def month_date_for_product(year: int, month: int, product: str) -> date:
-    """Return the project date convention for a product type."""
+    """Define a data usada para registrar uma série mensal.
+
+    Args:
+        year: Ano de referência.
+        month: Número do mês, de 1 a 12.
+        product: Identificador do produto já normalizado.
+
+    Returns:
+        Primeiro dia do mês para `cesta_basica` ou último dia do mês para
+        os demais produtos.
+
+    Raises:
+        ValueError: Se o ano ou o mês for inválido.
+    """
     if product == PRODUCT_CESTA_BASICA:
         return month_start(year, month)
 
@@ -41,22 +76,52 @@ def month_date_for_product(year: int, month: int, product: str) -> date:
 
 
 def normalize_city(value: object) -> str:
-    """Normalize city names used by the monthly table."""
+    """Converte um nome de cidade no identificador usado na planilha.
+
+    Args:
+        value: Nome ou identificador, como `Ilhéus` ou `itabuna`.
+
+    Returns:
+        Identificador `ilheus` ou `itabuna`.
+
+    Raises:
+        ValueError: Se a cidade for desconhecida.
+    """
     return _normalize_city(value)
 
 
 def normalize_product(value: object) -> str:
-    """Normalize product names used by the monthly table."""
+    """Converte o nome de um produto no identificador usado na planilha.
+
+    Args:
+        value: Nome ou identificador, como `café` ou `cesta básica`.
+
+    Returns:
+        Identificador de um produto da cesta ou `cesta_basica` para o total.
+
+    Raises:
+        ValueError: Se o produto for desconhecido.
+    """
     return _normalize_product(value)
 
 
 def parse_month_date(value: object, product: str) -> date:
-    """
-    Parse dates from the project spreadsheets and normalize by product type.
+    """Interpreta uma data da planilha seguindo a convenção da série.
 
-    The basket data uses the first day of the month. Product data uses the real
-    last day of the month. Invalid legacy labels such as ``31-02-2026`` are
-    accepted because only the month and year are needed.
+    O dia original é descartado. Isso permite aceitar rótulos antigos
+    como `31-02-2026`, desde que o mês e o ano sejam válidos.
+
+    Args:
+        value: Data, texto com data ou número serial do Excel que represente
+            uma data.
+        product: Produto ou total da cesta, no nome original ou normalizado.
+
+    Returns:
+        Primeiro dia do mês para o total da cesta ou último dia para produtos.
+
+    Raises:
+        ValueError: Se a data estiver vazia, não puder ser interpretada ou
+            o produto for inválido.
     """
     product_key = _normalize_product(product)
 
@@ -101,7 +166,18 @@ def normalize_month(
     value: str | date | datetime | pd.Timestamp,
     product: str = PRODUCT_CESTA_BASICA,
 ) -> date:
-    """Normalize a user-provided month/date by product type."""
+    """Converte o mês informado em uma data compatível com a série.
+
+    Args:
+        value: Rótulo `YYYY-MM`, data ou texto com data completa.
+        product: Produto da série. O padrão representa o total da cesta.
+
+    Returns:
+        Primeiro dia do mês para o total da cesta ou último dia para produtos.
+
+    Raises:
+        ValueError: Se o mês, a data ou o produto for inválido.
+    """
     product_key = _normalize_product(product)
 
     if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}", value.strip()):
@@ -112,7 +188,17 @@ def normalize_month(
 
 
 def normalize_price(value: object) -> float:
-    """Convert manual/Excel price values to float."""
+    """Converte um preço informado na planilha ou manualmente.
+
+    Args:
+        value: Número ou texto numérico, como `12,34` ou `1.234,56`.
+
+    Returns:
+        Preço em reais como float, arredondado a duas casas decimais.
+
+    Raises:
+        ValueError: Se o preço estiver vazio ou se o texto não for numérico.
+    """
     if value is None or pd.isna(value):
         raise ValueError("Preco vazio encontrado")
 
@@ -127,7 +213,19 @@ def normalize_price(value: object) -> float:
 
 
 def load_master_table(path: Path = MASTER_DATA_FILE) -> pd.DataFrame:
-    """Load the unified monthly table."""
+    """Lê e normaliza a planilha unificada de preços.
+
+    Args:
+        path: Caminho do Excel com as colunas `data`, `cidade`,
+            `produto` e `preco`.
+
+    Returns:
+        Tabela mensal ordenada e sem duplicatas da chave data/cidade/produto.
+
+    Raises:
+        FileNotFoundError: Se a planilha não existir.
+        ValueError: Se faltarem colunas ou houver valores inválidos.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Tabela unica nao encontrada: {path}")
 
@@ -135,7 +233,21 @@ def load_master_table(path: Path = MASTER_DATA_FILE) -> pd.DataFrame:
 
 
 def save_master_table(df: pd.DataFrame, path: Path = MASTER_DATA_FILE) -> Path:
-    """Save the unified monthly table."""
+    """Normaliza a tabela mensal e grava a planilha Excel.
+
+    Cria a pasta de destino quando necessário e sobrescreve a planilha.
+
+    Args:
+        df: Tabela com as colunas `data`, `cidade`, `produto` e `preco`.
+        path: Caminho da planilha de destino.
+
+    Returns:
+        O caminho recebido em `path`.
+
+    Raises:
+        ValueError: Se a tabela tiver colunas ausentes ou valores inválidos.
+        OSError: Se a pasta ou a planilha não puder ser gravada.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     _save_excel_with_date_format(clean_master_dataframe(df), path)
     return path
@@ -146,11 +258,21 @@ def add_or_update_prices(
     month: str | date | datetime | pd.Timestamp,
     prices: dict[str, dict[str, object]],
 ) -> pd.DataFrame:
-    """
-    Insert or replace prices in the unified table.
+    """Insere ou substitui preços de um mês na tabela unificada.
 
-    Existing rows with the same date/city/product are replaced, which makes the
-    monthly update script safe to rerun after correcting a value.
+    Registros com a mesma chave data/cidade/produto são substituídos,
+    permitindo reaplicar uma atualização após corrigir os valores.
+
+    Args:
+        df: Tabela mensal atual com as colunas de `MASTER_COLUMNS`.
+        month: Mês de referência, em formato `YYYY-MM` ou como data.
+        prices: Mapeamento `{cidade: {produto: preço}}` com os valores em reais.
+
+    Returns:
+        Novo DataFrame normalizado e ordenado, com as atualizações aplicadas.
+
+    Raises:
+        ValueError: Se nenhum preço for fornecido ou se os dados forem inválidos.
     """
     new_rows: list[dict[str, object]] = []
 
@@ -174,9 +296,9 @@ def add_or_update_prices(
     incoming = pd.DataFrame(new_rows, columns=MASTER_COLUMNS)
     current = clean_master_dataframe(df)
     key_columns = ["data", "cidade", "produto"]
-    incoming_keys = incoming[key_columns].apply(tuple, axis=1)
-    current_keys = current[key_columns].apply(tuple, axis=1)
-    current = current.loc[~current_keys.isin(set(incoming_keys))]
+    incoming_keys = pd.MultiIndex.from_frame(incoming[key_columns])
+    current_keys = pd.MultiIndex.from_frame(current[key_columns])
+    current = current.loc[~current_keys.isin(incoming_keys)]
 
     return clean_master_dataframe(pd.concat([current, incoming], ignore_index=True))
 
@@ -187,7 +309,17 @@ def validate_complete_month(
     required_cities: Iterable[str] = REGIOES,
     required_products: Iterable[str] = (PRODUCT_CESTA_BASICA, *PRODUTOS),
 ) -> None:
-    """Ensure the monthly manual payload has every expected city/product."""
+    """Verifica a presença dos preços obrigatórios da atualização mensal.
+
+    Args:
+        prices: Mapeamento `{cidade: {produto: preço}}` com chaves normalizadas.
+        required_cities: Identificadores das cidades que precisam estar presentes.
+        required_products: Produtos esperados em cada cidade, incluindo o total
+            da cesta por padrão.
+
+    Raises:
+        ValueError: Se um preço obrigatório estiver ausente ou for `None`.
+    """
     missing: list[str] = []
 
     for city in required_cities:
@@ -202,7 +334,19 @@ def validate_complete_month(
 
 
 def clean_master_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize columns, dates, labels, prices, sorting, and duplicates."""
+    """Normaliza e ordena uma tabela mensal de preços.
+
+    Args:
+        df: DataFrame com as colunas `data`, `cidade`, `produto` e `preco`.
+
+    Returns:
+        Cópia com as quatro colunas normalizadas, ordenada por data,
+        cidade e produto. Para chaves repetidas, mantém a última linha
+        após a ordenação.
+
+    Raises:
+        ValueError: Se faltarem colunas ou houver valores inválidos.
+    """
     missing_columns = set(MASTER_COLUMNS) - set(df.columns)
     if missing_columns:
         raise ValueError(f"Colunas ausentes na tabela unica: {sorted(missing_columns)}")
@@ -226,7 +370,22 @@ def load_price_series(
     product: str,
     path: Path = MASTER_DATA_FILE,
 ) -> pd.DataFrame:
-    """Load one city/product price series from the unified table."""
+    """Carrega uma série de preços mensais da planilha unificada.
+
+    Args:
+        city: Nome ou identificador da cidade.
+        product: Nome ou identificador do produto ou do total da cesta.
+        path: Caminho da planilha unificada.
+
+    Returns:
+        DataFrame em ordem cronológica, com as colunas `data` e `preco`
+        e valores em reais.
+
+    Raises:
+        FileNotFoundError: Se a planilha não existir.
+        ValueError: Se a cidade ou o produto for inválido, a tabela não
+            puder ser normalizada ou a série estiver vazia.
+    """
     city_key = normalize_city(city)
     product_key = normalize_product(product)
     df = load_master_table(path)
@@ -240,6 +399,12 @@ def load_price_series(
 
 
 def _save_excel_with_date_format(df: pd.DataFrame, path: Path) -> None:
+    """Grava uma cópia da tabela no Excel com datas no formato yyyy-mm-dd.
+
+    Args:
+        df: Tabela a exportar, com `data` como primeira coluna na tabela mensal.
+        path: Caminho da planilha a criar ou sobrescrever.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     output = df.copy()
 
@@ -261,6 +426,7 @@ def _save_excel_with_date_format(df: pd.DataFrame, path: Path) -> None:
 
 
 def _normalize_city(value: object) -> str:
+    """Valida o nome da cidade em `value` e retorna seu identificador."""
     city = str(value).strip().lower()
     aliases = {
         "ilheus": "ilheus",
@@ -273,6 +439,7 @@ def _normalize_city(value: object) -> str:
 
 
 def _normalize_product(value: object) -> str:
+    """Valida o nome do produto em `value` e retorna seu identificador."""
     product = str(value).strip().lower()
     aliases = {
         "cesta": PRODUCT_CESTA_BASICA,

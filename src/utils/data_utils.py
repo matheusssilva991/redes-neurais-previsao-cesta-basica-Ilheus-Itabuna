@@ -9,15 +9,19 @@ Este módulo fornece funções para:
 - Salvar modelos e previsões
 """
 
-from typing import List, Tuple, Optional, Union
-from pathlib import Path
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import List, Tuple, Optional, Union
 
+import keras
 import numpy as np
+import onnx
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 from numpy.typing import NDArray
 from keras.models import Sequential
-from keras.callbacks import History
+from keras.callbacks import Callback, History
 
 from config import (
     DEFAULT_NORMALIZATION_FACTOR,
@@ -38,35 +42,20 @@ def load_data(
     normalize: bool = True,
     normalization_factor: int = DEFAULT_NORMALIZATION_FACTOR,
 ) -> pd.DataFrame:
-    """
-    Carrega e preprocessa dados de um arquivo Excel.
+    """Carrega preços de uma planilha Excel.
 
     Args:
-        path (str | Path): Caminho para o arquivo Excel (.xlsx)
-        normalize (bool, optional): Se True, normaliza os dados dividindo
-                                   pelo fator de normalização. Padrão: True.
-        normalization_factor (int, optional): Fator para normalização.
-                                             Padrão: 1000.
+        path: Caminho da planilha com a coluna `preco`.
+        normalize: Se verdadeiro, divide os preços por `normalization_factor`.
+        normalization_factor: Divisor aplicado a cada preço na normalização.
 
     Returns:
-        pd.DataFrame: DataFrame preprocessado com coluna 'preco'.
-                     Se normalize=True, valores estarão divididos por 1000.
+        DataFrame com a coluna `preco` na escala solicitada. A coluna `ano`
+        é descartada quando presente.
 
     Raises:
-        FileNotFoundError: Se o arquivo não existir
-        ValueError: Se o arquivo não puder ser lido ou não contiver
-                   as colunas necessárias
-
-    Examples:
-        >>> df = load_unified_data("ilheus", "cesta_basica")
-        >>> df.head()
-           mes    preco
-        0  jan   0.550  # Normalizado (550 / 1000)
-        1  fev   0.560
-
-    Notes:
-        - Remove automaticamente a coluna 'ano' se existir
-        - Espera que o arquivo contenha coluna 'preco'
+        FileNotFoundError: Se a planilha não existir.
+        ValueError: Se a planilha não puder ser lida ou não tiver a coluna `preco`.
     """
     path = Path(path)
 
@@ -81,12 +70,10 @@ def load_data(
         logger.error(f"Erro ao ler arquivo {path}: {e}")
         raise ValueError(f"Erro ao ler arquivo {path}: {e}") from e
 
-    # Validar que contém coluna preco
     if "preco" not in df.columns:
         logger.error(f"Coluna 'preco' não encontrada em {path}")
         raise ValueError(f"Coluna 'preco' não encontrada no arquivo {path}")
 
-    # Remover coluna ano se existir
     if "ano" in df.columns:
         df.drop(["ano"], axis=1, inplace=True)
         logger.debug("Coluna 'ano' removida")
@@ -105,17 +92,21 @@ def load_unified_data(
     normalize: bool = True,
     normalization_factor: int = DEFAULT_NORMALIZATION_FACTOR,
 ) -> pd.DataFrame:
-    """
-    Carrega uma série mensal a partir de data/precos_mensais.xlsx.
+    """Carrega uma série mensal da planilha unificada de preços.
 
     Args:
-        city: Cidade da série, como ``ilheus`` ou ``itabuna``.
-        product: Produto da série. Use ``cesta_basica`` para o total da cesta.
-        normalize: Se True, divide os preços pelo fator de normalização.
-        normalization_factor: Fator usado na normalização.
+        city: Cidade da série, como `ilheus` ou `itabuna`.
+        product: Produto da série. Use `cesta_basica` para o total da cesta.
+        normalize: Se verdadeiro, divide os preços por `normalization_factor`.
+        normalization_factor: Divisor aplicado a cada preço na normalização.
 
     Returns:
-        DataFrame ordenado com colunas ``data`` e ``preco``.
+        DataFrame ordenado por data, com as colunas `data` e `preco`.
+
+    Raises:
+        FileNotFoundError: Se a planilha unificada não existir.
+        ValueError: Se a cidade ou o produto for inválido, a série estiver vazia
+            ou a tabela mensal não puder ser normalizada.
     """
     logger.info(f"Carregando serie unificada: cidade={city}, produto={product}")
     df = load_price_series(city, product)
@@ -132,36 +123,26 @@ def load_unified_data(
 def create_time_sequences(
     df: pd.DataFrame, look_back: int, forecast_horizon: int
 ) -> pd.DataFrame:
-    """
-    Cria sequências temporais (sliding windows) para treinamento de séries temporais.
-
-    Transforma série temporal em formato supervisionado, criando janelas deslizantes
-    onde cada linha contém valores passados (features) e futuros (targets).
+    """Cria janelas deslizantes de entrada e alvos a partir dos preços.
 
     Args:
-        df (pd.DataFrame): DataFrame contendo coluna 'preco' com a série temporal
-        look_back (int): Janela temporal de entrada (quantos períodos passados usar)
-                        Deve ser > 0
-        forecast_horizon (int): Quantos períodos futuros prever. Deve ser > 0
+        df: DataFrame com a coluna `preco` e, opcionalmente, a coluna `data`.
+            Quando há datas, elas definem a ordem das observações.
+        look_back: Número de observações passadas em cada janela de entrada.
+        forecast_horizon: Número de observações futuras usadas como alvos.
 
     Returns:
-        pd.DataFrame: DataFrame com sequências temporais estruturadas.
-                     Colunas: preco, preco t(h + 1), ..., preco t(h + n)
-                     Linhas com NaN são removidas.
+        Uma linha por janela completa. As primeiras `look_back` colunas
+        contêm as entradas e as demais contêm os alvos. Janelas com valores
+        ausentes são descartadas.
 
     Raises:
-        ValueError: Se df não contém coluna 'preco' ou parâmetros inválidos
+        ValueError: Se faltar a coluna `preco` ou um dos tamanhos for menor que 1.
 
     Examples:
-        >>> df = pd.DataFrame({'preco': [100, 110, 120, 130, 140]})
-        >>> result = create_time_sequences(df, look_back=2, forecast_horizon=1)
-        >>> result.shape
-        (2, 3)  # 2 amostras, 3 colunas (preco + 2 shifts)
-
-    Notes:
-        - Usa shift negativo para criar colunas futuras
-        - Remove automaticamente linhas com NaN (início/fim da série)
-        - Reseta índice após remoção de NaN
+        >>> df = pd.DataFrame({"preco": [100, 110, 120, 130, 140]})
+        >>> create_time_sequences(df, look_back=2, forecast_horizon=1).shape
+        (3, 3)
     """
     if "preco" not in df.columns:
         logger.error("DataFrame não contém coluna 'preco'")
@@ -176,15 +157,19 @@ def create_time_sequences(
         f"Criando sequências temporais: look_back={look_back}, horizon={forecast_horizon}"
     )
 
-    sequence_df = df.sort_values("data") if "data" in df.columns else df.copy()
-    sequence_df = sequence_df.loc[:, ["preco"]].copy()
-    sequence_df.reset_index(drop=True, inplace=True)
-
-    for n_step in range(1, look_back + forecast_horizon):
-        sequence_df[f"preco t(h + {n_step})"] = sequence_df["preco"].shift(-n_step)
-
-    sequence_df.dropna(inplace=True)
-    sequence_df.reset_index(drop=True, inplace=True)
+    ordered_df = df.sort_values("data") if "data" in df.columns else df
+    prices = ordered_df["preco"].reset_index(drop=True)
+    window_size = look_back + forecast_horizon
+    column_names = ["preco", *(f"preco t(h + {step})" for step in range(1, window_size))]
+    columns = pd.Index(column_names, dtype=ordered_df.columns.dtype)
+    if columns.hasnans:
+        # Um índice categórico pode não ter os novos nomes entre suas categorias.
+        columns = pd.Index(column_names)
+    sequence_df = pd.concat(
+        [prices.shift(-step) for step in range(window_size)],
+        axis=1,
+        keys=columns.rename(ordered_df.columns.name),
+    ).dropna(ignore_index=True)
 
     logger.info(
         f"Sequências criadas: {len(sequence_df)} amostras, "
@@ -196,23 +181,33 @@ def create_time_sequences(
 def _build_supervised_windows(
     prices: NDArray, look_back: int, forecast_horizon: int
 ) -> Tuple[NDArray, NDArray, NDArray]:
-    """Build train and validation windows from a 1D price series."""
-    if len(prices) < look_back + forecast_horizon:
+    """Monta os arrays de treino e a última janela de previsão.
+
+    Args:
+        prices: Array unidimensional de preços em ordem temporal.
+        look_back: Quantidade de preços por janela de entrada.
+        forecast_horizon: Quantidade de alvos após cada janela.
+
+    Returns:
+        Entradas de treino com forma `(n_amostras, look_back, 1)`, alvos
+        com forma `(n_amostras, forecast_horizon)` e a última janela com
+        forma `(1, look_back, 1)`. Os dois arrays de treino são float32.
+
+    Raises:
+        ValueError: Se a série tiver menos de `look_back + forecast_horizon`
+            observações.
+    """
+    window_size = look_back + forecast_horizon
+    if len(prices) < window_size:
         raise ValueError(
-            f"Serie insuficiente: precisa de pelo menos {look_back + forecast_horizon} "
+            f"Serie insuficiente: precisa de pelo menos {window_size} "
             f"observacoes, recebeu {len(prices)}"
         )
 
-    n_samples = len(prices) - look_back - forecast_horizon + 1
-    X_train = np.empty((n_samples, look_back, 1), dtype=np.float32)
-    y_train = np.empty((n_samples, forecast_horizon), dtype=np.float32)
-
-    for index in range(n_samples):
-        X_train[index, :, 0] = prices[index : index + look_back]
-        y_train[index, :] = prices[
-            index + look_back : index + look_back + forecast_horizon
-        ]
-
+    windows = sliding_window_view(prices, window_size)
+    # As janelas da view compartilham memória. O treino recebe cópias graváveis.
+    X_train = windows[:, :look_back, None].astype(np.float32, order="C")
+    y_train = windows[:, look_back:].astype(np.float32, order="C")
     X_val = prices[-look_back:].reshape(1, look_back, 1)
     return X_train, y_train, X_val
 
@@ -220,42 +215,29 @@ def _build_supervised_windows(
 def prepare_training_data(
     df: pd.DataFrame, look_back: int, forecast_horizon: Optional[int] = None
 ) -> Tuple[NDArray, NDArray, NDArray]:
-    """
-    Prepara dados no formato Keras separando features (X) e targets (y).
-
-    Divide o DataFrame em:
-    - X_train: Janelas de entrada (look_back períodos)
-    - y_train: Valores alvo (forecast_horizon períodos)
-    - X_val: Última janela para validação (últimos 12 valores)
+    """Prepara as entradas e os alvos do treino e a janela da próxima previsão.
 
     Args:
-        df (pd.DataFrame): DataFrame com sequências temporais criadas por
-                          create_time_sequences()
-        look_back (int): Tamanho da janela temporal de entrada
-        forecast_horizon (int, optional): Quantos meses futuros prever.
-                          Se não informado, tenta inferir do DataFrame.
+        df: Série bruta com a coluna `preco` e, opcionalmente, `data`, ou
+            tabela de janelas de `create_time_sequences`, com entradas
+            seguidas dos alvos em cada linha. Na série bruta, a coluna
+            `data`, quando presente, define a ordem das observações.
+        look_back: Número de observações por janela de entrada.
+        forecast_horizon: Número de alvos por janela. Informe-o para séries
+            brutas. Em janelas prontas, a omissão infere o horizonte pela
+            quantidade de colunas de preços menos `look_back`.
 
     Returns:
-        Tuple[NDArray, NDArray, NDArray]: Tupla contendo:
-            - X_train: shape (n_samples, look_back, 1)
-            - y_train: shape (n_samples, forecast_horizon)
-            - X_val: shape (1, 12, 1) para última predição
+        Tupla `(X_train, y_train, X_val)`. As formas são
+        `(n_amostras, look_back, 1)`, `(n_amostras, forecast_horizon)` e
+        `(1, look_back, 1)` quando há ao menos uma janela. `X_val` contém os
+        últimos preços disponíveis para gerar a próxima previsão. Em uma
+        tabela de janelas prontas vazia, os arrays têm zero amostras.
 
     Raises:
-        ValueError: Se df não tiver colunas suficientes ou look_back inválido
-
-    Examples:
-        >>> df_sequences = create_time_sequences(df, look_back=3, forecast_horizon=1)
-        >>> X_train, y_train, X_val = prepare_training_data(
-        ...     df_sequences, look_back=3, forecast_horizon=1
-        ... )
-        >>> X_train.shape
-        (n_samples, 3, 1)
-
-    Notes:
-        - Reshape para formato Keras: (batches, timesteps, features)
-        - X_val sempre usa últimos 12 valores (hardcoded para este projeto)
-        - Assume que df já passou por create_time_sequences()
+        ValueError: Se faltar `preco`, houver preços inválidos, os tamanhos
+            forem inválidos, o horizonte não puder ser inferido ou a série
+            bruta for curta demais para formar uma janela completa.
     """
     if look_back <= 0:
         raise ValueError(f"look_back deve ser > 0, recebido: {look_back}")
@@ -316,37 +298,25 @@ def train_model(
     epochs: int = DEFAULT_EPOCHS,
     batch_size: int = DEFAULT_BATCH_SIZE,
     verbose: int = 0,
+    *,
+    callbacks: list[Callback] | None = None,
 ) -> History:
-    """
-    Treina um modelo Keras com os dados fornecidos.
+    """Treina um modelo Keras mantendo a ordem das amostras.
 
     Args:
-        model (Sequential): Modelo Keras compilado
-        X_train (NDArray): Dados de entrada de treino.
-                          Shape: (n_samples, timesteps, features)
-        y_train (NDArray): Dados de saída de treino.
-                          Shape: (n_samples, forecast_horizon)
-        epochs (int, optional): Número de épocas de treinamento. Padrão: 150.
-        batch_size (int, optional): Tamanho do batch. Padrão: 1.
-        verbose (int, optional): Nível de verbosidade do Keras (0, 1, 2).
-                               Padrão: 0 (silencioso).
+        model: Modelo Keras já compilado.
+        X_train: Janelas de entrada na forma `(n_amostras, look_back, 1)`.
+        y_train: Alvos na forma `(n_amostras, forecast_horizon)`.
+        epochs: Número de épocas de treino.
+        batch_size: Número de amostras por lote.
+        verbose: Nível de saída do Keras. Use 0 para modo silencioso.
+        callbacks: Callbacks acionados pelo Keras durante o treinamento.
 
     Returns:
-        History: Objeto History do Keras com histórico de treinamento
-                (loss por época, métricas, etc.)
+        Histórico do Keras com a perda de treino por época.
 
     Raises:
-        ValueError: Se epochs ou batch_size <= 0
-
-    Examples:
-        >>> model = get_model('RNN', look_back=12, forecast_horizon=3)
-        >>> history = train_model(model, X_train, y_train, epochs=100)
-        >>> history.history['loss'][-1]  # Loss final
-
-    Notes:
-        - shuffle=False para manter ordem temporal
-        - Use verbose=1 para ver progresso durante treinamento
-        - verbose=0 (padrão) é melhor para notebooks
+        ValueError: Se `epochs` ou `batch_size` for menor que 1.
     """
     if epochs <= 0:
         raise ValueError(f"epochs deve ser > 0, recebido: {epochs}")
@@ -365,6 +335,7 @@ def train_model(
         batch_size=batch_size,
         shuffle=False,
         verbose=verbose,
+        callbacks=callbacks,
     )
 
     final_loss = history.history["loss"][-1]
@@ -382,46 +353,26 @@ def save_model(
     subdir: Optional[str] = None,
     save_onnx: bool = False,
 ) -> Path:
-    """
-    Salva um modelo Keras treinado em disco.
+    """Grava um modelo Keras e, opcionalmente, o exporta para ONNX.
 
-    O modelo é salvo no formato .keras (recomendado) no diretório de saída
-    organizado por região e (opcionalmente) subdiretório.
-    Opcionalmente, também exporta para ONNX no mesmo diretório.
+    Cria o diretório de saída e sobrescreve o arquivo Keras do mesmo
+    modelo, região, série e horizonte. A exportação ONNX é opcional e suas
+    falhas são registradas como avisos depois que o arquivo Keras é salvo.
 
     Args:
-        model (Sequential): Modelo Keras treinado
-        model_name (str): Nome do modelo (RNN, LSTM, CNN)
-        region (str): Região ('ilheus' ou 'itabuna')
-        object_name (str): Nome do objeto/produto (ex: 'cesta_basica', 'arroz')
-        forecast_horizon (int): Horizonte de previsão (3, 6, 12, etc.)
-        subdir (str, optional): Subdiretório adicional (ex: 'produtos').
-                               Padrão: None.
-        save_onnx (bool, optional): Se True, também exporta modelo para .onnx.
-                       Padrão: False.
+        model: Modelo Keras a serializar.
+        model_name: Identificador da arquitetura, como `RNN`.
+        region: Cidade que determina o diretório do modelo.
+        object_name: Série prevista, como `cesta_basica` ou `arroz`.
+        forecast_horizon: Horizonte em meses, incluído no nome do arquivo.
+        subdir: Subdiretório opcional dentro da pasta da cidade.
+        save_onnx: Se verdadeiro, tenta gravar também um arquivo `.onnx`.
 
     Returns:
-        Path: Caminho completo do arquivo salvo
+        Caminho do arquivo `.keras`.
 
     Raises:
-        OSError: Se não for possível criar diretórios ou salvar arquivo
-
-    Examples:
-        >>> model = get_model('RNN', 12, 3)
-        >>> path = save_model(model, 'RNN', 'ilheus', 'cesta_basica', 3)
-        >>> print(path)
-        ../output/models/ilheus/RNN_ilheus_cesta_basica_h3.keras
-
-        >>> # Com subdiretório
-        >>> path = save_model(model, 'RNN', 'ilheus', 'arroz', 3, subdir='produtos')
-        >>> print(path)
-        ../output/models/ilheus/produtos/RNN_ilheus_arroz_h3.keras
-
-    Notes:
-        - Formato .keras é mais robusto que .h5
-        - Exportação ONNX usa tf2onnx quando save_onnx=True
-        - Cria diretórios automaticamente se não existirem
-        - Sobrescreve arquivo se já existir
+        OSError: Se houver erro de acesso ou escrita ao gravar o modelo Keras.
     """
     if subdir:
         save_dir = MODELS_DIR / region.lower() / subdir
@@ -450,111 +401,89 @@ def save_model(
     if save_onnx:
         onnx_file = model_file.with_suffix(".onnx")
         try:
-            import tf2onnx
-
             logger.info(f"Exportando modelo ONNX em: {onnx_file}")
-            try:
-                # Conversão direta costuma funcionar para a maioria dos modelos.
-                tf2onnx.convert.from_keras(model, output_path=str(onnx_file))
-            except Exception as convert_error:
-                if "keras_tensor" not in str(convert_error).lower():
-                    raise
-
-                # Fallback para casos de incompatibilidade de nomes de tensores
-                # entre Keras e tf2onnx (ex.: 'keras_tensor_3').
-                logger.info(
-                    "Conversão direta falhou por mapeamento de tensores. "
-                    "Tentando via tf.function..."
-                )
-
-                _export_onnx_from_function(model, onnx_file)
-
+            _export_onnx(model_file, onnx_file)
             logger.info("Modelo ONNX salvo com sucesso")
-        except ImportError:
-            logger.warning(
-                "Pacote 'tf2onnx' não encontrado. Pulando exportação ONNX. "
-                "Instale com: pip install tf2onnx"
-            )
         except Exception as e:
             logger.warning(f"Falha ao exportar ONNX ({onnx_file.name}): {e}")
 
     return model_file
 
 
-def _export_onnx_from_function(model: Sequential, output_path: Path) -> None:
-    """Export a Keras model to ONNX through tf.function."""
-    import tensorflow as tf
-    import tf2onnx
+def _export_onnx(model_file: Path, output_path: Path) -> None:
+    """Exporta o modelo salvo para inferência ONNX em CPU.
 
-    input_shape = _get_static_input_shape(model)
-    input_signature = [
-        tf.TensorSpec(input_shape, tf.float32, name="input"),
-    ]
+    Args:
+        model_file: Arquivo Keras com os pesos a exportar.
+        output_path: Destino do arquivo ONNX validado.
 
-    @tf.function(input_signature=input_signature)
-    @tf.autograph.experimental.do_not_convert
-    def predict(inputs):
-        return model(inputs, training=False)
+    Raises:
+        OSError: Se os arquivos não puderem ser lidos ou escritos.
+        ValueError: Se a assinatura de entrada for incompatível com o modelo.
+    """
+    with keras.device("cpu"), TemporaryDirectory(dir=output_path.parent) as temp_dir:
+        model = keras.saving.load_model(model_file, compile=False)
+        if any(getattr(layer, "stateful", False) for layer in model.layers):
+            # Cada chamada ONNX começa com estado zero. O modelo Keras
+            # continua mantendo o estado entre lotes de treino e previsão.
+            inference_model = keras.models.clone_model(
+                model, clone_function=_clone_for_onnx
+            )
+            inference_model.set_weights(model.get_weights())
+            model = inference_model
+        signature = keras.InputSpec(
+            shape=(1, *model.input_shape[1:]), dtype="float32", name="input"
+        )
+        temp_path = Path(temp_dir) / output_path.name
+        model.export(
+            str(temp_path), format="onnx", input_signature=[signature], verbose=False
+        )
+        onnx.checker.check_model(temp_path)
+        temp_path.replace(output_path)
 
-    tf2onnx.convert.from_function(
-        predict,
-        input_signature=input_signature,
-        output_path=str(output_path),
-    )
 
+def _clone_for_onnx(layer: keras.layers.Layer) -> keras.layers.Layer:
+    """Recria uma camada para chamadas ONNX independentes.
 
-def _get_static_input_shape(model: Sequential) -> tuple[int, ...]:
-    """Return a concrete input shape for ONNX export."""
-    input_shape = model.input_shape
-    if isinstance(input_shape, list):
-        input_shape = input_shape[0]
+    Args:
+        layer: Camada Keras a reconstruir.
 
-    if input_shape is None:
-        raise ValueError("Modelo sem input_shape definido para exportacao ONNX")
-
-    return tuple(
-        1 if dimension is None else int(dimension) for dimension in input_shape
-    )
+    Returns:
+        Camada com a mesma configuração, com estado recorrente desabilitado.
+    """
+    config = layer.get_config()
+    if config.get("stateful"):
+        config["stateful"] = False
+    return layer.__class__.from_config(config)
 
 
 def generate_forecast(
     model: Sequential, X_val: NDArray, batch_size: int = DEFAULT_BATCH_SIZE
 ) -> List[float]:
-    """
-    Gera previsões usando o modelo treinado.
+    """Gera a previsão correspondente à primeira janela de entrada.
 
     Args:
-        model (Sequential): Modelo Keras treinado
-        X_val (NDArray): Dados de validação/entrada para previsão.
-                        Shape: (n_samples, timesteps, features)
-        batch_size (int, optional): Tamanho do batch para previsão. Padrão: 1.
+        model: Modelo Keras treinado.
+        X_val: Janelas de inferência na forma `(n_amostras, look_back, 1)`,
+            com pelo menos uma amostra.
+        batch_size: Número de amostras por lote de inferência.
 
     Returns:
-        List[float]: Lista de valores previstos (forecast_horizon valores)
+        Valores dos próximos passos, na escala de saída do modelo.
 
     Raises:
-        ValueError: Se batch_size <= 0
-
-    Examples:
-        >>> model = get_model('RNN', 12, 3)
-        >>> # Treinar modelo...
-        >>> predictions = generate_forecast(model, X_val)
-        >>> len(predictions)
-        3  # forecast_horizon = 3
-        >>> predictions
-        [0.551, 0.563, 0.572]  # Valores normalizados
-
-    Notes:
-        - O modelo deve estar treinado antes de chamar esta função
-        - Retorna valores normalizados (se dados foram normalizados)
-        - Use verbose=0 para suprimir mensagens do Keras
+        ValueError: Se `batch_size` for menor que 1.
     """
     if batch_size <= 0:
         raise ValueError(f"batch_size deve ser > 0, recebido: {batch_size}")
 
     logger.info(f"Gerando previsões com batch_size={batch_size}")
 
-    forecast = model.predict(X_val, batch_size=batch_size, verbose=0)
+    if len(X_val) == 1:
+        # A chamada direta evita criar um grafo de predição para uma só janela.
+        forecast = keras.ops.convert_to_numpy(model(X_val, training=False))
+    else:
+        forecast = model.predict(X_val, batch_size=batch_size, verbose=0)
     predictions = [float(value) for value in forecast[0]]
 
     logger.info(f"Previsões geradas: {len(predictions)} valores")
@@ -571,49 +500,26 @@ def save_forecasts(
     forecast_horizon: int,
     forecast_type: str = "cesta",
 ) -> str:
-    """
-    Salva previsões em arquivo JSON.
+    """Grava em JSON os valores previstos para uma série.
 
-    IMPORTANTE: Esta versão salva valores como array JSON nativo (não string),
-    facilitando a leitura e interoperabilidade.
+    Cria os diretórios necessários e sobrescreve o arquivo se ele existir.
+    Apenas o horizonte de 12 meses recebe a marca `12_meses` no nome.
 
     Args:
-        results (List[float]): Lista de valores previstos (normalizados)
-        model_name (str): Nome do modelo (RNN, LSTM, CNN)
-        object_name (str): Nome do objeto/produto (ex: 'cesta_basica', 'arroz')
-        region (str): Região ('ilheus' ou 'itabuna')
-        forecast_horizon (int): Horizonte de previsão usado
-        forecast_type (str, optional): Tipo de previsão ('cesta' ou 'produtos').
-                                      Padrão: 'cesta'.
+        results: Previsões na escala do modelo, armazenadas como um array JSON.
+        model_name: Nome do modelo, como `RNN`, `LSTM` ou `CNN`.
+        object_name: Nome da série, como `cesta_basica` ou `arroz`.
+        region: Cidade da série, como `ilheus` ou `itabuna`.
+        forecast_horizon: Horizonte da previsão em meses.
+        forecast_type: Use `cesta` para a pasta de totais ou `produtos` para
+            a pasta de produtos da cidade.
 
     Returns:
-        str: Nome do arquivo salvo (sem path completo)
+        Nome do arquivo JSON, sem o diretório.
 
     Raises:
-        OSError: Se não for possível criar diretórios ou salvar arquivo
-        ValueError: Se forecast_type inválido
-
-    Examples:
-        >>> results = [0.551, 0.563, 0.572]
-        >>> filename = save_forecasts(
-        ...     results, 'RNN', 'cesta_basica', 'ilheus', 3, 'cesta'
-        ... )
-        >>> print(filename)
-        'previsao_RNN_cesta_basica_ilheus.json'
-
-        >>> # Com horizonte de 12 meses
-        >>> filename = save_forecasts(
-        ...     results, 'RNN', 'arroz', 'ilheus', 12, 'produtos'
-        ... )
-        >>> print(filename)
-        'previsao_RNN_12_meses_arroz_ilheus.json'
-
-    Notes:
-        - Valores são salvos como array JSON nativo: [0.551, 0.563, 0.572]
-        - NÃO mais como string: "[0.551, 0.563, 0.572]"
-        - Cria diretórios automaticamente se não existirem
-        - Sobrescreve arquivo se já existir
-        - ensure_ascii=False para suportar acentuação
+        ValueError: Se `forecast_type` for inválido.
+        OSError: Se ocorrer uma falha ao criar o diretório ou gravar o arquivo.
     """
     if forecast_type not in ["cesta", "produtos"]:
         raise ValueError(
@@ -622,7 +528,6 @@ def save_forecasts(
 
     object_formatted = object_name.replace(" ", "_")
 
-    # IMPORTANTE: Salvar como array JSON nativo, não string
     output = {object_formatted.lower(): results}
 
     if forecast_horizon == 12:

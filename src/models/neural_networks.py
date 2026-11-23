@@ -27,35 +27,21 @@ from config import (
 def create_rnn_model(
     look_back: int, forecast_horizon: int, learning_rate: float = DEFAULT_LEARNING_RATE
 ) -> Sequential:
-    """
-    Cria uma Rede Neural Recorrente (RNN) simples para previsão de séries temporais.
+    """Cria uma RNN simples com saída linear para previsão de preços.
 
-    A arquitetura consiste em uma camada SimpleRNN seguida de uma camada Dense
-    para gerar as previsões. Adequada para capturar dependências de curto prazo.
+    A entrada tem uma variável por mês e lote fixo de uma amostra.
+    A camada recorrente reinicia o estado a cada sequência.
 
     Args:
-        look_back (int): Janela temporal de entrada (número de meses históricos).
-                        Deve ser > 0.
-        forecast_horizon (int): Número de períodos futuros a prever.
-                               Deve ser > 0.
-        learning_rate (float, optional): Taxa de aprendizado do otimizador Adam.
-                                        Padrão: 0.0003.
+        look_back: Número de meses históricos na entrada.
+        forecast_horizon: Número de valores futuros na saída.
+        learning_rate: Taxa de aprendizado do otimizador Adam.
 
     Returns:
-        Sequential: Modelo RNN compilado e pronto para treinamento.
-                   Loss: mean_squared_error, Optimizer: Adam.
+        Modelo Keras compilado com erro quadrático médio.
 
     Raises:
-        ValueError: Se look_back ou forecast_horizon <= 0
-
-    Examples:
-        >>> model = create_rnn_model(look_back=12, forecast_horizon=3)
-        >>> model.summary()
-
-    Notes:
-        - Unidades RNN: 24 neurônios (configurável via RNN_UNITS)
-        - Stateful: False (cada sequência é independente)
-        - Função de ativação final: Linear (regressão)
+        ValueError: Se algum parâmetro for menor ou igual a zero.
     """
     if look_back <= 0:
         raise ValueError(f"look_back deve ser > 0, recebido: {look_back}")
@@ -78,35 +64,22 @@ def create_rnn_model(
 def create_lstm_model(
     look_back: int, forecast_horizon: int, learning_rate: float = DEFAULT_LEARNING_RATE
 ) -> Sequential:
-    """
-    Cria uma Rede Neural LSTM (Long Short-Term Memory) para séries temporais.
+    """Cria uma rede com duas camadas LSTM e saída linear.
 
-    Arquitetura com duas camadas LSTM empilhadas, capaz de aprender dependências
-    de longo prazo nos dados. Ideal para séries temporais complexas.
+    A primeira camada entrega a sequência inteira à segunda, que mantém
+    o estado entre lotes. A entrada usa uma variável por mês e lote fixo
+    de uma amostra.
 
     Args:
-        look_back (int): Janela temporal de entrada (número de meses históricos).
-                        Deve ser > 0.
-        forecast_horizon (int): Número de períodos futuros a prever.
-                               Deve ser > 0.
-        learning_rate (float, optional): Taxa de aprendizado do otimizador Adam.
-                                        Padrão: 0.0003.
+        look_back: Número de meses históricos na entrada.
+        forecast_horizon: Número de valores futuros na saída.
+        learning_rate: Taxa de aprendizado do otimizador Adam.
 
     Returns:
-        Sequential: Modelo LSTM compilado e pronto para treinamento.
-                   Loss: mean_squared_error, Optimizer: Adam.
+        Modelo Keras compilado com erro quadrático médio.
 
     Raises:
-        ValueError: Se look_back ou forecast_horizon <= 0
-
-    Examples:
-        >>> model = create_lstm_model(look_back=12, forecast_horizon=3)
-        >>> model.summary()
-
-    Notes:
-        - 1ª camada LSTM: 32 neurônios com return_sequences=True
-        - 2ª camada LSTM: 32 neurônios com stateful=True
-        - Função de ativação final: Linear (regressão)
+        ValueError: Se algum parâmetro for menor ou igual a zero.
     """
     if look_back <= 0:
         raise ValueError(f"look_back deve ser > 0, recebido: {look_back}")
@@ -132,36 +105,23 @@ def create_lstm_model(
 def create_cnn_model(
     look_back: int, forecast_horizon: int, learning_rate: float = DEFAULT_LEARNING_RATE
 ) -> Sequential:
-    """
-    Cria uma Rede Neural Convolucional 1D (CNN) para séries temporais.
+    """Cria uma CNN unidimensional com saída linear para prever preços.
 
-    Aplica filtros convolucionais para extrair padrões temporais locais,
-    seguido de pooling e camadas densas. Eficiente para detectar tendências.
+    A convolução e o pooling operam no eixo temporal, com uma variável
+    de entrada por mês.
 
     Args:
-        look_back (int): Janela temporal de entrada (número de meses históricos).
-                        Deve ser > 0.
-        forecast_horizon (int): Número de períodos futuros a prever.
-                               Deve ser > 0.
-        learning_rate (float, optional): Taxa de aprendizado do otimizador Adam.
-                                        Padrão: 0.0003.
+        look_back: Número de meses históricos na entrada. Deve comportar
+            o kernel da convolução e a janela do pooling configurados.
+        forecast_horizon: Número de valores futuros na saída.
+        learning_rate: Taxa de aprendizado do otimizador Adam.
 
     Returns:
-        Sequential: Modelo CNN compilado e pronto para treinamento.
-                   Loss: mean_squared_error, Optimizer: Adam.
+        Modelo Keras compilado com erro quadrático médio.
 
     Raises:
-        ValueError: Se look_back ou forecast_horizon <= 0
-
-    Examples:
-        >>> model = create_cnn_model(look_back=12, forecast_horizon=3)
-        >>> model.summary()
-
-    Notes:
-        - Conv1D: 24 filtros, kernel_size=3, ativação tanh
-        - MaxPooling1D: pool_size=2
-        - Dense intermediária: 15 neurônios, ativação tanh
-        - Função de ativação final: Linear (regressão)
+        ValueError: Se algum parâmetro for menor ou igual a zero ou se a
+            janela for incompatível com as dimensões das camadas.
     """
     if look_back <= 0:
         raise ValueError(f"look_back deve ser > 0, recebido: {look_back}")
@@ -171,7 +131,7 @@ def create_cnn_model(
         raise ValueError(f"learning_rate deve ser > 0, recebido: {learning_rate}")
 
     model = Sequential(name="CNN_Model")
-    model.add(Input(input_shape=(look_back, 1)))  # type: ignore
+    model.add(Input(shape=(look_back, 1)))
     model.add(
         Conv1D(
             filters=CNN_FILTERS,
@@ -205,45 +165,20 @@ def get_model(
     forecast_horizon: int,
     learning_rate: float = DEFAULT_LEARNING_RATE,
 ) -> Sequential:
-    """
-    Factory function para obter um modelo compilado pelo nome.
-
-    Esta função implementa o padrão Factory para criar modelos de forma
-    flexível e extensível. Novos modelos podem ser adicionados ao dicionário
-    AVAILABLE_MODELS sem modificar esta função.
+    """Cria e compila a arquitetura de previsão selecionada.
 
     Args:
-        model_name (str): Nome do modelo. Opções: 'RNN', 'LSTM' ou 'CNN'.
-                         Case-sensitive.
-        look_back (int): Janela temporal de entrada (número de meses históricos).
-                        Deve ser > 0.
-        forecast_horizon (int): Número de períodos futuros a prever.
-                               Deve ser > 0.
-        learning_rate (float, optional): Taxa de aprendizado do otimizador Adam.
-                                        Padrão: 0.0003.
+        model_name: Nome exato da arquitetura, `RNN`, `LSTM` ou `CNN`.
+        look_back: Número de meses históricos na entrada.
+        forecast_horizon: Número de valores futuros na saída.
+        learning_rate: Taxa de aprendizado do otimizador Adam.
 
     Returns:
-        Sequential: Modelo Keras compilado e pronto para treinamento.
+        Modelo Keras compilado e pronto para treino.
 
     Raises:
-        ValueError: Se model_name não estiver em AVAILABLE_MODELS ou
-                   se os parâmetros numéricos forem inválidos.
-
-    Examples:
-        >>> # Criar modelo RNN padrão
-        >>> model = get_model('RNN', look_back=12, forecast_horizon=3)
-
-        >>> # Criar modelo LSTM com learning rate customizado
-        >>> model = get_model('LSTM', look_back=12, forecast_horizon=6, learning_rate=0.001)
-
-        >>> # Listar modelos disponíveis
-        >>> print(list(AVAILABLE_MODELS.keys()))
-        ['RNN', 'LSTM', 'CNN']
-
-    Notes:
-        - Todos os modelos usam mean_squared_error como função de perda
-        - Todos os modelos usam o otimizador Adam
-        - Para adicionar novos modelos, basta incluir no AVAILABLE_MODELS
+        ValueError: Se a arquitetura for desconhecida ou se algum parâmetro
+            numérico for inválido para o modelo selecionado.
     """
     if model_name not in AVAILABLE_MODELS:
         raise ValueError(

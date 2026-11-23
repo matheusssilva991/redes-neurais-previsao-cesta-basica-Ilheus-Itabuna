@@ -50,6 +50,38 @@ class MonthlyDataTest(unittest.TestCase):
         self.assertEqual(updated.iloc[0]["data"], date(2026, 5, 1))
         self.assertEqual(updated.iloc[0]["preco"], 123.45)
 
+    def test_add_or_update_prices_with_aliases_and_composite_keys_is_idempotent(self):
+        columns = ["data", "cidade", "produto", "preco"]
+        df = pd.DataFrame(
+            [
+                (date(2026, 4, 30), "ilheus", "arroz", 2.0),
+                (date(2026, 5, 31), "ilheus", "arroz", 1.0),
+                (date(2026, 5, 31), "itabuna", "arroz", 8.0),
+            ],
+            columns=columns,
+        )
+        prices = {
+            "Ilhéus": {"arroz": "200,50"},
+            "ilheus": {"arroz": "205,50", "cesta": "600,15"},
+            "itabuna": {"óleo": "10,00"},
+        }
+        expected = pd.DataFrame(
+            [
+                (date(2026, 4, 30), "ilheus", "arroz", 2.0),
+                (date(2026, 5, 1), "ilheus", PRODUCT_CESTA_BASICA, 600.15),
+                (date(2026, 5, 31), "ilheus", "arroz", 205.5),
+                (date(2026, 5, 31), "itabuna", "arroz", 8.0),
+                (date(2026, 5, 31), "itabuna", "oleo", 10.0),
+            ],
+            columns=columns,
+        )
+
+        updated = add_or_update_prices(df, "2026-05", prices)
+        pd.testing.assert_frame_equal(updated, expected)
+        pd.testing.assert_frame_equal(
+            add_or_update_prices(updated, "2026-05", prices), expected
+        )
+
     def test_load_price_series_reads_from_unified_table(self):
         df = pd.DataFrame(
             [

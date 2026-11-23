@@ -60,6 +60,17 @@ _EXPORTS = {
 
 
 def __getattr__(name: str):
+    """Carrega um utilitário sob demanda e o armazena no módulo.
+
+    Args:
+        name: Nome de um símbolo registrado em `_EXPORTS`.
+
+    Returns:
+        Objeto exportado pelo módulo de origem.
+
+    Raises:
+        AttributeError: Se o nome não estiver registrado.
+    """
     if name not in _EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

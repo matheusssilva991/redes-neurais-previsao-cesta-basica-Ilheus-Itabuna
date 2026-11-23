@@ -120,8 +120,7 @@ def train(
     verbose: bool,
     save_onnx: bool,
 ):
-    """
-    Treina modelos de previsão e gera previsões.
+    """Treina modelos de previsão e gera previsões.
 
     Exemplos:
 
@@ -133,6 +132,21 @@ def train(
 
         # CNN com configurações customizadas
         $ uv run previsao-cestas train -m CNN -e 200 -lr 0.001 -v
+
+    \f
+
+    Args:
+        model: Arquitetura `RNN`, `LSTM` ou `CNN`.
+        horizon: Horizonte em meses, recebido como `"3"`, `"6"` ou `"12"`.
+        region: Cidade a processar ou `both` para as duas cidades.
+        forecast_type: Séries a processar, `cesta`, `produtos` ou `both`.
+        epochs: Número de épocas por série.
+        learning_rate: Taxa de aprendizado do otimizador.
+        verbose: Se verdadeiro, exibe o progresso detalhado do Keras.
+        save_onnx: Se verdadeiro, tenta exportar também os modelos em ONNX.
+
+    Raises:
+        SystemExit: Com código 1 se ocorrer um erro no fluxo de treino.
     """
     forecast_horizon = int(horizon)
     regions = REGIOES if region == "both" else [region]
@@ -191,7 +205,17 @@ def _train_cesta_basica(
     verbose: bool,
     save_onnx: bool,
 ):
-    """Treina modelos para previsão da cesta básica."""
+    """Treina e salva a previsão da cesta básica para cada cidade.
+
+    Args:
+        model_name: Arquitetura selecionada.
+        regions: Cidades a processar.
+        forecast_horizon: Horizonte da previsão em meses.
+        epochs: Número de épocas por série.
+        learning_rate: Taxa de aprendizado do otimizador.
+        verbose: Se verdadeiro, exibe o progresso detalhado do Keras.
+        save_onnx: Se verdadeiro, tenta exportar também os modelos em ONNX.
+    """
     click.echo("\n📦 TREINANDO CESTA BÁSICA")
     click.echo(f"{'=' * 70}\n")
 
@@ -228,7 +252,17 @@ def _train_produtos(
     verbose: bool,
     save_onnx: bool,
 ):
-    """Treina modelos para previsão de produtos individuais."""
+    """Treina e salva previsões para cada produto das cidades solicitadas.
+
+    Args:
+        model_name: Arquitetura selecionada.
+        regions: Cidades a processar.
+        forecast_horizon: Horizonte da previsão em meses.
+        epochs: Número de épocas por série.
+        learning_rate: Taxa de aprendizado do otimizador.
+        verbose: Se verdadeiro, exibe o progresso detalhado do Keras.
+        save_onnx: Se verdadeiro, tenta exportar também os modelos em ONNX.
+    """
     click.echo("\n🛍️  TREINANDO PRODUTOS INDIVIDUAIS")
     click.echo(f"{'=' * 70}\n")
     click.echo(
@@ -274,7 +308,23 @@ def _train_single_series(
     forecast_type: str,
     subdir: str | None = None,
 ) -> list[float]:
-    """Treina uma serie temporal e persiste modelo e previsao."""
+    """Treina uma série e grava o modelo e suas previsões.
+
+    Args:
+        model_name: Arquitetura selecionada.
+        region: Cidade da série.
+        object_name: Identificador da série, como `cesta_basica` ou `arroz`.
+        forecast_horizon: Número de meses futuros a prever.
+        epochs: Número de épocas de treinamento.
+        learning_rate: Taxa de aprendizado do otimizador.
+        verbose: Se verdadeiro, exibe o progresso detalhado do Keras.
+        save_onnx: Se verdadeiro, tenta exportar também o modelo em ONNX.
+        forecast_type: Destino do JSON, `cesta` ou `produtos`.
+        subdir: Subdiretório opcional para o modelo dentro da pasta da cidade.
+
+    Returns:
+        Lista de previsões na escala normalizada do modelo.
+    """
     from models import get_model
     from utils.data_utils import (
         create_time_sequences,
@@ -335,11 +385,16 @@ def _train_single_series(
     help="Região para listar modelos",
 )
 def list_models(region: str):
-    """
-    Lista modelos treinados disponíveis.
+    """Lista modelos treinados disponíveis.
 
     Exemplo:
         $ uv run previsao-cestas list-models --region ilheus
+
+    \f
+
+    Args:
+        region: Cidade cujos modelos Keras serão listados, ou `both` para
+            as duas cidades.
     """
     from config import MODELS_DIR
 
@@ -355,10 +410,8 @@ def list_models(region: str):
             click.echo(f"📍 {reg.upper()}: Nenhum modelo encontrado\n")
             continue
 
-        # Listar modelos da cesta básica
         cesta_models = list(region_dir.glob("*cesta_basica*.keras"))
 
-        # Listar modelos de produtos
         produtos_dir = region_dir / "produtos"
         produto_models = []
         if produtos_dir.exists():
@@ -371,7 +424,7 @@ def list_models(region: str):
 
         if produto_models:
             click.echo(f"   Produtos: {len(produto_models)} modelo(s)")
-            for model in produto_models[:5]:  # Mostrar apenas primeiros 5
+            for model in produto_models[:5]:
                 click.echo(f"     • {model.name}")
             if len(produto_models) > 5:
                 click.echo(f"     ... e mais {len(produto_models) - 5}")

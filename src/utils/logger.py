@@ -13,41 +13,37 @@ def setup_logger(
     level: int = logging.INFO,
     log_file: Optional[Path] = None,
 ) -> logging.Logger:
-    """
-    Configura um logger para o projeto.
+    """Configura um logger do projeto com saída para stdout.
+
+    Substitui os handlers diretos do logger para evitar mensagens duplicadas
+    quando a configuração é chamada novamente com o mesmo nome.
 
     Args:
-        name: Nome do logger
-        level: Nível de log (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Caminho opcional para arquivo de log
+        name: Nome usado para obter ou criar o logger.
+        level: Nível mínimo de log, como `logging.INFO`.
+        log_file: Caminho opcional de um arquivo UTF-8 em modo de acréscimo.
 
     Returns:
-        logging.Logger: Logger configurado
+        Logger configurado.
 
-    Examples:
-        >>> logger = setup_logger()
-        >>> logger.info("Modelo treinado com sucesso")
-        >>> logger.error("Erro ao carregar dados")
+    Raises:
+        OSError: Se não for possível criar o diretório ou abrir o arquivo de log.
     """
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    # Remove handlers existentes para evitar duplicação
     logger.handlers.clear()
 
-    # Formato do log
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Handler para console
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Handler para arquivo (opcional)
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, encoding="utf-8")

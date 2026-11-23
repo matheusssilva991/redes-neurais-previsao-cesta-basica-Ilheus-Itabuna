@@ -180,7 +180,7 @@ Todos os notebooks foram refatorados para usar os pacotes `models/` e `utils/`:
 ### Principais Bibliotecas
 
 - **Python 3.12** - Linguagem de programação
-- **TensorFlow/Keras** - Framework de Deep Learning
+- **Keras 3 com TensorFlow** - Framework de Deep Learning
 - **Pandas** - Manipulação de dados
 - **Matplotlib** - Visualização de gráficos
 - **Seaborn** - Visualizações estatísticas
@@ -191,41 +191,45 @@ Todos os notebooks foram refatorados para usar os pacotes `models/` e `utils/`:
 
 ### Pré-requisitos
 
-- Conda ou Miniconda instalado
+- uv instalado (Conda ou Miniconda como alternativa)
 - Python 3.12 ou superior
 - Git (opcional)
 
 ### Instalação
 
-1. **Clone o repositório**
+1. **Clone o repositório e instale as dependências**
 
-    ```bash
-    git clone https://github.com/matheusssilva991/redes-neurais-previsao-cesta-basica-Ilheus-Itabuna.git
-    cd redes-neurais-previsao-cesta-basica-Ilheus-Itabuna
-    ```
+   ```bash
+   git clone https://github.com/matheusssilva991/redes-neurais-previsao-cesta-basica-Ilheus-Itabuna.git
+   cd redes-neurais-previsao-cesta-basica-Ilheus-Itabuna
+   uv sync --locked --python 3.12
+   ```
 
-2. **Crie e ative o ambiente Conda**
+2. **Use a CLI ou abra o notebook com o Python do ambiente**
 
-    ```bash
-    # Criar ambiente a partir do arquivo environment.yml
-    conda env create -f environment.yml
+   ```bash
+   uv run --locked previsao-cestas --help
+   ```
 
-    # Ativar o ambiente
-    conda activate cesta
-    ```
+   O projeto usa Keras com TensorFlow. Para rodar o ajuste em CPU, use
+   `uv run --locked python -m src.ajustar_modelos --cpu`. No terminal,
+   as barras de validação e de teste final avançam a cada época. Use
+   `--smoke` para verificar o fluxo com uma época por candidata. No notebook,
+   deixe `USAR_CPU = True` ou selecione `False` para permitir o uso da GPU.
+   Reinicie o kernel ao mudar essa configuração.
 
-3. **Ou usando uv (alternativa moderna)**
+   Como alternativa, use `conda env create -f environment.yml` e
+   `conda activate cesta`. Para reproduzir as versões do experimento, use o uv.
 
-    ```bash
-    # Instalar dependências via pyproject.toml
-    uv sync
-    ```
+### Exportação ONNX
 
-4. **Desativar ambiente (quando necessário)**
-
-    ```bash
-    conda deactivate
-    ```
+Use `--save-onnx` na CLI ou `SAVE_ONNX = True` no notebook. A exportação usa
+o modelo `.keras` salvo e recebe um lote unitário em `float32`, com forma
+`(1, look_back, 1)`. A LSTM exportada usa estado inicial zerado a cada chamada
+independente de inferência. Para carregar o ONNX, use a primeira entrada e a
+primeira saída da sessão do ONNX Runtime. O exportador do Keras com
+TensorFlow usa `tf2onnx`. Valide o arquivo na versão do ONNX Runtime do serviço
+antes de publicá-lo.
 
 ## 📁 Estrutura do Projeto
 
@@ -723,7 +727,7 @@ Este projeto está sob a licença especificada no arquivo LICENSE.
 ## 🙏 Agradecimentos
 
 - Dados coletados das cidades de Ilhéus e Itabuna, Bahia
-- Comunidade Python e TensorFlow/Keras
+- Comunidade Python, Keras e TensorFlow
 
 ---
 

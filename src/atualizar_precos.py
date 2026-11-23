@@ -85,6 +85,11 @@ PRECOS_MENSAIS = {
 
 
 def main() -> None:
+    """Executa a atualização manual de preços configurada no script.
+
+    Raises:
+        SystemExit: Se a planilha não existir ou o mês ou os preços forem inválidos.
+    """
     try:
         _main()
     except (FileNotFoundError, ValueError) as exc:
@@ -92,16 +97,22 @@ def main() -> None:
 
 
 def _main() -> None:
-    # Garante que o payload manual esteja completo antes de tocar no Excel.
+    """Valida a atualização manual, substitui os preços do mês e imprime um resumo.
+
+    A planilha unificada é gravada após a validação dos dados configurados.
+
+    Raises:
+        FileNotFoundError: Se a planilha unificada não existir.
+        ValueError: Se faltarem preços ou se os dados forem inválidos.
+    """
     validate_complete_month(PRECOS_MENSAIS)
 
-    # Carrega a tabela historica, aplica o mes informado e salva a versao limpa.
     df = load_master_table(MASTER_DATA_FILE)
     df = add_or_update_prices(df, MES_REFERENCIA, PRECOS_MENSAIS)
     save_master_table(df, MASTER_DATA_FILE)
 
     month_date = normalize_month(MES_REFERENCIA)
-    # Resume apenas o recorte do mes atualizado para facilitar a conferencia.
+    # Compara ano e mês porque a cesta e os produtos usam dias diferentes.
     rows_for_month = df.loc[
         df["data"].apply(
             lambda value: value.year == month_date.year

@@ -65,10 +65,15 @@ class PlotConfig:
 
 
 def extract_dates_from_dataframe(df: pd.DataFrame) -> Optional[List[pd.Timestamp]]:
-    """
-    Extrai datas mensais de um DataFrame.
+    """Extrai as datas da série e as desloca para o primeiro dia do mês.
 
-    Aceita coluna `data` da tabela única ou a coluna histórica `ano`.
+    Args:
+        df: DataFrame com a coluna `data` ou, na ausência dela, a coluna
+            histórica `ano`.
+
+    Returns:
+        Datas na ordem das linhas, ou `None` se faltar a coluna ou se alguma
+        data for inválida.
     """
     date_column = (
         "data" if "data" in df.columns else "ano" if "ano" in df.columns else None
@@ -89,11 +94,21 @@ def derive_month_labels_from_history(
     forecast_horizon: int,
     month_labels: Optional[List[str]] = None,
 ) -> Tuple[List[str], List[str], int]:
-    """
-    Deriva labels de meses históricos e previstos a partir de um DataFrame.
+    """Gera os rótulos dos meses históricos e previstos para um gráfico.
+
+    Se a série não tiver datas válidas suficientes, considera o mês atual
+    como o último mês histórico.
+
+    Args:
+        df: Série histórica em ordem cronológica.
+        hist_months: Quantidade de meses históricos, maior que zero.
+        forecast_horizon: Quantidade de meses previstos, maior que zero.
+        month_labels: Rótulos de janeiro a dezembro. O padrão usa os nomes
+            configurados em português.
 
     Returns:
-        Tuple[List[str], List[str], int]: (meses_anteriores, meses_previstos, ano_previsao)
+        Tupla com os rótulos históricos, os rótulos futuros e o ano do último
+        mês previsto.
     """
     if month_labels is None:
         month_labels = CHART_MONTH_LABELS_PT
@@ -102,8 +117,6 @@ def derive_month_labels_from_history(
     if dates and len(dates) >= hist_months:
         history_dates = dates[-hist_months:]
     else:
-        # Quando não há coluna de data mensal válida no dataset, assume que a
-        # série histórica já inclui o mês corrente.
         last_complete_month = pd.Timestamp.today().replace(day=1)
         history_dates = list(
             pd.date_range(end=last_complete_month, periods=hist_months, freq="MS")
@@ -121,46 +134,50 @@ def derive_month_labels_from_history(
     return previous_months, forecast_months, forecast_year
 
 
+def _decode_forecast_values(values_data: List[float | str] | str) -> List[float]:
+    """Converte um array nativo ou uma lista legada em texto para floats."""
+    if isinstance(values_data, list):
+        return [float(value) for value in values_data]
+
+    try:
+        # A conversão direta para float preserva o sinal de inteiros como -0.
+        decoded = json.loads(values_data, parse_int=float)
+    except (json.JSONDecodeError, RecursionError):
+        decoded = None
+
+    if (
+        isinstance(decoded, list)
+        and decoded
+        and all(isinstance(value, float) for value in decoded)
+    ):
+        return decoded
+
+    # Arquivos antigos também podem conter números aceitos por float fora do JSON.
+    values_str = values_data.replace("[", "").replace("]", "")
+    return [float(value.strip()) for value in values_str.split(",")]
+
+
 def load_forecast_from_json(
     filepath: Union[str, Path],
     denormalize: bool = True,
     normalization_factor: int = DEFAULT_NORMALIZATION_FACTOR,
 ) -> List[float]:
-    """
-    Carrega previsões de um arquivo JSON.
+    """Carrega as previsões da primeira chave de um JSON.
 
-    Suporta AMBOS os formatos:
-    - Novo formato (array nativo): {"produto": [0.551, 0.563, 0.572]}
-    - Formato legado (string): {"produto": "[0.551, 0.563, 0.572]"}
+    Aceita arrays JSON e o formato legado de lista gravada como texto.
 
     Args:
-        filepath (str | Path): Caminho para o arquivo JSON
-        denormalize (bool, optional): Se True, multiplica valores por 1000.
-                                     Padrão: True.
-        normalization_factor (int, optional): Fator de desnormalização.
-                                             Padrão: 1000.
+        filepath: Caminho do arquivo JSON.
+        denormalize: Se verdadeiro, converte os valores para reais.
+        normalization_factor: Multiplicador usado na conversão para reais.
 
     Returns:
-        List[float]: Lista de valores previstos (desnormalizados se denormalize=True)
+        Lista de previsões na escala solicitada.
 
     Raises:
-        FileNotFoundError: Se arquivo não existir
-        ValueError: Se JSON inválido ou formato incorreto
-
-    Examples:
-        >>> values = load_forecast_from_json("previsao_RNN_cesta_basica_ilheus.json")
-        >>> values
-        [551.0, 563.0, 572.0]  # Desnormalizados (× 1000)
-
-        >>> # Manter normalizados
-        >>> values = load_forecast_from_json("previsao.json", denormalize=False)
-        >>> values
-        [0.551, 0.563, 0.572]
-
-    Notes:
-        - Compatível com formato antigo (string) e novo (array)
-        - Desnormalização padrão é × 1000 (valores em reais)
-        - Procura pela primeira chave disponível no JSON
+        FileNotFoundError: Se o arquivo não existir.
+        ValueError: Se o JSON for inválido ou vazio, o valor não for uma
+            lista ou texto, ou algum valor não puder ser convertido em float.
     """
     filepath = Path(filepath)
 
@@ -185,21 +202,15 @@ def load_forecast_from_json(
     key = list(data.keys())[0]
     values_data = data[key]
 
-    # Suportar ambos os formatos: array nativo ou string
-    if isinstance(values_data, list):
-        # Novo formato: array nativo
-        values = [float(v) for v in values_data]
-        logger.debug(f"Formato JSON: array nativo ({len(values)} valores)")
-    elif isinstance(values_data, str):
-        # Formato legado: string
-        values_str = values_data.replace("[", "").replace("]", "")
-        values = [float(v.strip()) for v in values_str.split(",")]
-        logger.debug(f"Formato JSON: string legado ({len(values)} valores)")
-    else:
+    if not isinstance(values_data, (list, str)):
         raise ValueError(
             f"Formato inesperado em {filepath}: esperado lista ou string, "
             f"recebido {type(values_data)}"
         )
+
+    values = _decode_forecast_values(values_data)
+    value_format = "array nativo" if isinstance(values_data, list) else "string legado"
+    logger.debug(f"Formato JSON: {value_format} ({len(values)} valores)")
 
     if denormalize:
         values = [v * normalization_factor for v in values]
@@ -211,34 +222,21 @@ def load_forecast_from_json(
 def load_forecasts_for_regions(
     model: str, object_name: str, regions: List[str], forecast_horizon: int = 3
 ) -> Dict[str, List[float]]:
-    """
-    Carrega previsões de múltiplas regiões.
+    """Carrega as previsões em reais para uma série em várias cidades.
 
     Args:
-        model (str): Nome do modelo (RNN, LSTM, CNN)
-        object_name (str): Nome do objeto (ex: 'cesta_basica')
-        regions (List[str]): Lista de nomes de regiões (ex: ['ilheus', 'itabuna'])
-        forecast_horizon (int, optional): Horizonte de previsão (3 ou 12).
-                                         Padrão: 3.
+        model: Identificador da arquitetura, como `RNN`.
+        object_name: Identificador da série no nome do arquivo.
+        regions: Cidades cujos arquivos devem ser lidos.
+        forecast_horizon: Horizonte em meses. Apenas 12 seleciona um nome
+            com a marca `12_meses`.
 
     Returns:
-        Dict[str, List[float]]: Dicionário com regiões como chaves e
-                               listas de previsões como valores.
-                               Valores estão desnormalizados (em reais).
+        Dicionário com a lista de previsões em reais de cada cidade.
 
     Raises:
-        FileNotFoundError: Se arquivo de alguma região não existir
-
-    Examples:
-        >>> forecasts = load_forecasts_for_regions(
-        ...     'RNN', 'cesta_basica', ['ilheus', 'itabuna'], forecast_horizon=3
-        ... )
-        >>> forecasts
-        {'ilheus': [551.0, 563.0, 572.0], 'itabuna': [588.0, 610.0, 612.0]}
-
-    Notes:
-        - Automaticamente detecta formato JSON (legado ou novo)
-        - Valores retornados são desnormalizados (× 1000)
+        FileNotFoundError: Se faltar o arquivo de uma das cidades.
+        ValueError: Se algum arquivo tiver previsões inválidas.
     """
     results = {}
     logger.info(
@@ -271,38 +269,28 @@ def load_product_forecasts(
     quantities: Optional[Dict[str, float]] = None,
     forecast_horizon: int = 12,
 ) -> Dict[str, Dict[str, List[float]]]:
-    """
-    Carrega previsões de múltiplos produtos e regiões.
+    """Carrega previsões de produtos em reais por unidade de referência.
+
+    O carregador aceita arrays JSON e listas gravadas como texto. Para
+    cada produto, divide a previsão pela quantidade e multiplica por 1000.
 
     Args:
-        model (str): Nome do modelo (RNN, LSTM, CNN)
-        regions (List[str]): Lista de regiões (ex: ['ilheus', 'itabuna'])
-        products (List[str]): Lista de produtos (ex: ['arroz', 'feijao'])
-        quantities (Dict[str, float], optional): Quantidades dos produtos na cesta.
-                                                Se None, usa PRODUTOS_QUANTIDADES.
-                                                Padrão: None.
-        forecast_horizon (int, optional): Horizonte de previsão. Padrão: 12.
+        model: Identificador da arquitetura, como `RNN`.
+        regions: Cidades a carregar.
+        products: Identificadores dos produtos a carregar.
+        quantities: Quantidades positivas por produto na unidade adotada
+            para o gráfico. Por padrão, usa `PRODUTOS_QUANTIDADES`.
+        forecast_horizon: Horizonte em meses. Apenas 12 seleciona um nome
+            com a marca `12_meses`.
 
     Returns:
-        Dict[str, Dict[str, List[float]]]: Dicionário aninhado:
-            {região: {produto: [valores]}}
-            Valores estão normalizados por quantidade e multiplicados por 1000.
+        Dicionário `{cidade: {produto: [valores]}}`, na ordem das previsões.
 
     Raises:
-        FileNotFoundError: Se arquivo de algum produto não existir
-        ValueError: Se quantities não contiver produto necessário
-
-    Examples:
-        >>> forecasts = load_product_forecasts(
-        ...     'RNN', ['ilheus'], ['arroz', 'feijao'], forecast_horizon=3
-        ... )
-        >>> forecasts
-        {'ilheus': {'arroz': [2.5, 2.6, 2.7], 'feijao': [5.1, 5.2, 5.3]}}
-
-    Notes:
-        - Valores são divididos pela quantidade do produto
-        - Depois multiplicados por 1000 para converter em reais
-        - Usa PRODUTOS_QUANTIDADES por padrão
+        FileNotFoundError: Se faltar um arquivo de previsão.
+        KeyError: Se a chave do produto estiver ausente no JSON.
+        ValueError: Se faltar uma quantidade ou houver previsões inválidas.
+        ZeroDivisionError: Se uma quantidade for zero.
     """
     if quantities is None:
         quantities = PRODUTOS_QUANTIDADES
@@ -331,21 +319,14 @@ def load_product_forecasts(
             filepath = FORECASTS_PRODUTOS_DIR / region / filename
 
             try:
-                # Carregar sem desnormalizar (já fizemos na função base)
                 with open(filepath, "r", encoding="utf-8") as file:
                     data = json.load(file)
 
-                # Suportar ambos formatos
                 values_data = data[product]
-                if isinstance(values_data, list):
-                    values = [float(v) for v in values_data]
-                elif isinstance(values_data, str):
-                    values_str = values_data.replace("[", "").replace("]", "")
-                    values = [float(v.strip()) for v in values_str.split(",")]
-                else:
+                if not isinstance(values_data, (list, str)):
                     raise ValueError(f"Formato inesperado em {filepath}")
 
-                # Normalizar por quantidade e converter para reais
+                values = _decode_forecast_values(values_data)
                 values = [v / quantities[product] * 1000 for v in values]
                 results[region][product] = values
 
@@ -363,27 +344,13 @@ def load_product_forecasts(
 
 
 def setup_plot_style(figsize: tuple = CHART_FIGSIZE) -> tuple[Figure, Axes]:
-    """
-    Cria e configura uma figura matplotlib.
+    """Cria uma figura Matplotlib com um único eixo.
 
     Args:
-        figsize (tuple, optional): Tamanho da figura (largura, altura) em polegadas.
-                                  Padrão: (15, 5).
+        figsize: Largura e altura da figura, em polegadas.
 
     Returns:
-        tuple[Figure, Axes]: Tupla contendo (figura, eixos)
-
-    Examples:
-        >>> fig, ax = setup_plot_style()
-        >>> ax.plot([1, 2, 3], [1, 2, 3])
-        >>> plt.show()
-
-        >>> # Tamanho customizado
-        >>> fig, ax = setup_plot_style(figsize=(12, 6))
-
-    Notes:
-        - Use ax para plotar e configurar o gráfico
-        - Use fig.savefig() para salvar
+        Tupla com a figura e o eixo criados.
     """
     fig, ax = plt.subplots(figsize=figsize)
     return fig, ax
@@ -394,28 +361,13 @@ def format_yticks_with_comma(
     yticks_range: Union[range, List[float]],
     yticks_labels: Optional[List[str]] = None,
 ) -> None:
-    """
-    Formata ticks do eixo Y com vírgula como separador decimal.
+    """Configura as marcações e os rótulos do eixo Y.
 
     Args:
-        ax (Axes): Eixo matplotlib a formatar
-        yticks_range (range | List[float]): Posições dos ticks no eixo Y
-        yticks_labels (List[str], optional): Labels customizados.
-                                            Se None, gera automaticamente com vírgulas.
-                                            Padrão: None.
-
-    Examples:
-        >>> fig, ax = setup_plot_style()
-        >>> format_yticks_with_comma(ax, range(0, 100, 10))
-        >>> # Ticks: 0,00  10,00  20,00  ...
-
-        >>> # Labels customizados
-        >>> format_yticks_with_comma(ax, [0, 50, 100], ['zero', 'meio', 'cem'])
-
-    Notes:
-        - Formato padrão: ".2f" (2 casas decimais)
-        - Substitui ponto por vírgula (padrão BR)
-        - Tamanho da fonte: 15
+        ax: Eixo Matplotlib a modificar.
+        yticks_range: Posições das marcações no eixo Y.
+        yticks_labels: Rótulos na mesma ordem das posições. Quando omitidos,
+            os valores são formatados com duas casas decimais e vírgula.
     """
     if yticks_labels is None:
         yticks_labels = [format(y, ".2f").replace(".", ",") for y in yticks_range]
@@ -435,33 +387,19 @@ def add_forecast_annotation(
     color: str = "black",
     boxed: bool = False,
 ) -> None:
-    """
-    Adiciona anotação de valor a um ponto de previsão.
+    """Anota um ponto do gráfico com um valor de duas casas decimais.
 
     Args:
-        ax (Axes): Eixo matplotlib
-        x (float): Coordenada X do ponto
-        y (float): Coordenada Y do ponto
-        value (float): Valor a exibir na anotação
-        offset (float, optional): Deslocamento vertical em pontos. Padrão: 8.
-        va (str, optional): Alinhamento vertical ('top' ou 'bottom'). Padrão: 'bottom'.
-        x_offset (float, optional): Deslocamento horizontal em pontos. Padrão: 0.
-        color (str, optional): Cor do texto. Padrão: 'black'.
-        boxed (bool, optional): Se True, usa fundo claro para legibilidade.
-
-    Examples:
-        >>> fig, ax = setup_plot_style()
-        >>> ax.plot([1, 2, 3], [10, 20, 30], 'o')
-        >>> add_forecast_annotation(ax, 2, 20, 20.5)
-        >>> # Anotação "20,50" acima do ponto (2, 20)
-
-        >>> # Anotação abaixo
-        >>> add_forecast_annotation(ax, 3, 30, 30.2, va='top')
-
-    Notes:
-        - Formato: 2 casas decimais com vírgula
-        - Tamanho da fonte: 13
-        - Alinhamento horizontal: centralizado
+        ax: Eixo Matplotlib a modificar.
+        x: Coordenada horizontal do ponto, em unidades de dados.
+        y: Coordenada vertical do ponto, em unidades de dados.
+        value: Valor mostrado na anotação, com vírgula decimal.
+        offset: Distância vertical em pontos.
+        va: Alinhamento vertical. Use `bottom` para deslocar o texto para
+            cima e `top` para baixo.
+        x_offset: Deslocamento horizontal em pontos.
+        color: Cor do texto.
+        boxed: Se verdadeiro, adiciona um fundo branco semitransparente.
     """
     y_offset = offset if va == "bottom" else -offset
     bbox = None
@@ -487,35 +425,21 @@ def add_forecast_annotation(
 
 
 def save_figure(filename: Union[str, Path], dpi: int = CHART_DPI) -> None:
-    """
-    Salva a figura matplotlib atual.
+    """Grava a figura ativa do Matplotlib com margens ajustadas ao conteúdo.
+
+    Cria a pasta de destino e imprime o caminho gravado.
 
     Args:
-        filename (str | Path): Caminho do arquivo de saída.
-                              Suporta: .png, .jpg, .pdf, .svg
-        dpi (int, optional): Resolução em dots per inch. Padrão: 300.
+        filename: Caminho de saída, com uma extensão aceita pelo Matplotlib.
+        dpi: Resolução da figura em pontos por polegada.
 
     Raises:
-        OSError: Se não for possível salvar o arquivo
-
-    Examples:
-        >>> fig, ax = setup_plot_style()
-        >>> ax.plot([1, 2, 3], [1, 2, 3])
-        >>> save_figure("meu_grafico.png")
-        ✅ Gráfico salvo em: meu_grafico.png
-
-        >>> # Alta resolução
-        >>> save_figure("grafico_hd.png", dpi=600)
-
-    Notes:
-        - bbox_inches='tight' remove espaços em branco
-        - DPI 300 é adequado para publicações
-        - DPI 150 é suficiente para web
+        OSError: Se a pasta ou o arquivo não puder ser gravado.
+        ValueError: Se o formato da figura não for aceito.
     """
     filename = Path(filename)
 
     try:
-        # Criar diretório se não existir
         filename.parent.mkdir(parents=True, exist_ok=True)
 
         plt.savefig(fname=filename, dpi=dpi, bbox_inches="tight")
@@ -535,37 +459,26 @@ def load_product_historical_data(
     quantities: Optional[Dict[str, float]] = None,
     n_months: int = 9,
 ) -> Dict[str, List[float]]:
-    """
-    Carrega dados históricos de produtos da tabela única.
+    """Carrega os preços históricos de produtos da planilha mensal.
 
     Args:
-        data_folder (str | Path): Mantido por compatibilidade; não é mais usado.
-        sub_pasta (str): Mantido por compatibilidade; não é mais usado.
-        region (str): Nome da região ('ilheus' ou 'itabuna')
-        products (List[str]): Lista de produtos a carregar
-        quantities (Dict[str, float], optional): Quantidades dos produtos.
-                                                Se None, usa PRODUTOS_QUANTIDADES.
-        n_months (int, optional): Número de últimos meses a carregar. Padrão: 9.
+        data_folder: Caminho legado, aceito por compatibilidade e ignorado.
+        sub_pasta: Subpasta legada, aceita por compatibilidade e ignorada.
+        region: Cidade da série, como `ilheus` ou `itabuna`.
+        products: Identificadores dos produtos a carregar.
+        quantities: Quantidades positivas por produto na unidade adotada
+            para o gráfico. Por padrão, usa `PRODUTOS_QUANTIDADES`.
+        n_months: Número de observações mais recentes a retornar.
 
     Returns:
-        Dict[str, List[float]]: Dicionário com produtos como chaves e
-                               listas de valores normalizados por quantidade.
+        Dicionário com os valores históricos de cada produto em reais,
+        divididos pela quantidade correspondente e em ordem cronológica.
 
     Raises:
-        ValueError: Se produto não estiver em quantities
-
-    Examples:
-        >>> historico = load_product_historical_data(
-        ...     "../data", "", "ilheus",
-        ...     ["arroz", "feijao"], n_months=6
-        ... )
-        >>> historico
-        {'arroz': [2.5, 2.6, 2.7, 2.8, 2.9, 3.0],
-         'feijao': [5.1, 5.2, 5.3, 5.4, 5.5, 5.6]}
-
-    Notes:
-        - Valores são divididos pela quantidade do produto
-        - Lê os dados de data/precos_mensais.xlsx
+        FileNotFoundError: Se a planilha unificada não existir.
+        ValueError: Se faltar uma quantidade, a série estiver vazia ou a
+            cidade, o produto ou os dados da planilha forem inválidos.
+        ZeroDivisionError: Se uma quantidade for zero.
     """
     if quantities is None:
         quantities = PRODUTOS_QUANTIDADES
@@ -587,7 +500,6 @@ def load_product_historical_data(
         try:
             df = load_price_series(region, product)
             values = df["preco"].tail(n_months).to_list()
-            # Normalize by quantity
             values = [v / quantities[product] for v in values]
             results[product] = values
 
@@ -614,53 +526,24 @@ def plot_product_chart(
     x_label: List[str],
     limite_y: int,
 ) -> None:
-    """
-    Plota gráfico de produtos com valores históricos e previsões.
+    """Desenha nove meses de histórico e três de previsão para cada produto.
 
-    Cria visualização que conecta dados históricos (9 meses) com previsões
-    (3 meses futuros), usando cores e marcadores diferentes.
+    Uma linha pontilhada liga o último mês observado ao primeiro previsto.
 
     Args:
-        ax (Axes): Eixo matplotlib onde plotar
-        produtos (List[str]): Lista de nomes de produtos
-        valores_reais (Dict[str, List[float]]): Valores históricos por produto
-        previsoes (Dict[str, List[float]]): Previsões por produto
-        markers (List[str]): Estilos de marcadores ('o', 's', '^', etc.)
-        colors_real (List[str]): Cores para valores históricos
-        colors_prev (List[str]): Cores para previsões
-        markers_size (List[int]): Tamanhos dos marcadores
-        line_size (float): Espessura das linhas
-        x_label (List[str]): Labels do eixo X (12 meses)
-        limite_y (int): Limite superior do eixo Y
-
-    Examples:
-        >>> config = PlotConfig(
-        ...     produtos=["arroz", "feijao"],
-        ...     valores_reais={"arroz": [2.5, 2.6, ..., 2.9],  # 9 valores
-        ...                    "feijao": [5.1, 5.2, ..., 5.9]},
-        ...     previsoes={"arroz": [3.0, 3.1, 3.2],  # 3 valores
-        ...                "feijao": [6.0, 6.1, 6.2]},
-        ...     markers=["o", "s"],
-        ...     colors_real=["blue", "green"],
-        ...     colors_prev=["red", "orange"],
-        ...     markers_size=[8, 8],
-        ...     line_size=2.0,
-        ...     x_labels=["Jan", "Fev", ..., "Dez"],
-        ...     limite_y=100
-        ... )
-        >>> fig, ax = setup_plot_style()
-        >>> plot_product_chart(ax, **vars(config))  # Desempacotar dataclass
-        >>> plt.show()
-
-    Notes:
-        - Histórico: meses 0-8 (linha sólida)
-        - Conexão: meses 8-9 (linha pontilhada)
-        - Previsão: meses 9-11 (linha pontilhada)
-        - Grade habilitada no eixo Y
-        - Aplica transformação "c" → "ç" nos rótulos
+        ax: Eixo Matplotlib a modificar.
+        produtos: Identificadores dos produtos, na ordem das listas de estilo.
+        valores_reais: Nove valores históricos em reais por produto.
+        previsoes: Três valores previstos em reais por produto.
+        markers: Marcadores Matplotlib na ordem de `produtos`.
+        colors_real: Cores do histórico na ordem de `produtos`.
+        colors_prev: Cores da previsão na ordem de `produtos`.
+        markers_size: Tamanhos dos marcadores na ordem de `produtos`.
+        line_size: Espessura das linhas.
+        x_label: Doze rótulos dos meses, começando pelo histórico.
+        limite_y: Limite superior exclusivo das marcações do eixo Y.
     """
     for i, produto in enumerate(produtos):
-        # Connection line (liga último valor real ao primeiro previsto)
         ax.plot(
             [8, 9],
             [valores_reais[produto][-1], previsoes[produto][0]],
@@ -670,7 +553,6 @@ def plot_product_chart(
             markersize=markers_size[i],
         )
 
-        # Historical values (meses 0-8)
         ax.plot(
             [x for x in range(9)],
             valores_reais[produto],
@@ -680,7 +562,6 @@ def plot_product_chart(
             markersize=markers_size[i],
         )
 
-        # Forecasts (meses 9-11)
         ax.plot(
             [9, 10, 11],
             previsoes[produto],
@@ -692,7 +573,6 @@ def plot_product_chart(
             markersize=markers_size[i],
         )
 
-    # Formatting
     ax.set_xticks([x for x in range(0, 12)])
     ax.set_xticklabels(x_label, size=15)
     ax.set_ylabel("Custo (R$)", size=20)
@@ -715,44 +595,19 @@ def plot_forecast_only_chart(
     yticks_range: Union[range, List[float]],
     yticks_labels: List[str],
 ) -> None:
-    """
-    Plota gráfico de produtos com apenas valores previstos (sem histórico).
-
-    Visualização simplificada mostrando apenas as previsões de 12 meses,
-    sem dados históricos. Útil para relatórios focados em futuro.
+    """Desenha os doze meses de previsão de cada produto.
 
     Args:
-        ax (Axes): Eixo matplotlib onde plotar
-        produtos (List[str]): Lista de nomes de produtos
-        previsoes (Dict[str, List[float]]): Previsões por produto (12 valores)
-        markers (List[str]): Estilos de marcadores ('o', 's', '^', etc.)
-        colors (List[str]): Cores para cada produto
-        markers_size (List[int]): Tamanhos dos marcadores
-        line_size (float): Espessura das linhas
-        x_labels (List[str]): Labels do eixo X (12 meses)
-        yticks_range (range | List[float]): Posições dos ticks Y
-        yticks_labels (List[str]): Labels dos ticks Y (com vírgulas)
-
-    Examples:
-        >>> fig, ax = setup_plot_style()
-        >>> previsoes = {
-        ...     "arroz": [2.5, 2.6, ..., 3.6],  # 12 valores
-        ...     "feijao": [5.0, 5.1, ..., 6.0]
-        ... }
-        >>> plot_forecast_only_chart(
-        ...     ax, ["arroz", "feijao"], previsoes,
-        ...     ["o", "s"], ["blue", "green"], [8, 8], 2.0,
-        ...     ["Jan", "Fev", ..., "Dez"],
-        ...     range(0, 10), ["0,00", "1,00", ..., "9,00"]
-        ... )
-        >>> plt.legend()
-        >>> plt.show()
-
-    Notes:
-        - Todas as linhas são tracejadas (ls="--")
-        - Grade habilitada no eixo Y
-        - Aplica transformação "c" → "ç" nos rótulos
-        - Ideal para previsões de 12 meses
+        ax: Eixo Matplotlib a modificar.
+        produtos: Identificadores dos produtos a desenhar.
+        previsoes: Doze valores previstos em reais por produto.
+        markers: Marcadores Matplotlib na ordem de `produtos`.
+        colors: Cores na ordem de `produtos`.
+        markers_size: Tamanhos dos marcadores na ordem de `produtos`.
+        line_size: Espessura das linhas.
+        x_labels: Doze rótulos dos meses previstos.
+        yticks_range: Posições das marcações do eixo Y.
+        yticks_labels: Rótulos formatados na ordem das posições do eixo Y.
     """
     for produto, mark, color, marker_size in zip(
         produtos, markers, colors, markers_size
@@ -768,7 +623,6 @@ def plot_forecast_only_chart(
             lw=line_size,
         )
 
-    # Formatting
     ax.set_xticks(range(12))
     ax.set_xticklabels(x_labels, size=13)
     ax.set_yticks(list(yticks_range))
