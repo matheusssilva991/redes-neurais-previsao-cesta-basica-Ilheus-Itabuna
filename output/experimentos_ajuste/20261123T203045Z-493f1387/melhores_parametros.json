@@ -1,0 +1,246 @@
+[
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "RNN",
+    "candidato": "ajuste_4",
+    "parametros": {
+      "epochs": 150,
+      "learning_rate": 0.0001,
+      "look_back": 24,
+      "units": 16
+    },
+    "mae_validacao_reais": 12.45701667626698,
+    "mae_atual_validacao_reais": 15.890420440038042
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "LSTM",
+    "candidato": "ajuste_3",
+    "parametros": {
+      "epochs": 100,
+      "learning_rate": 0.001,
+      "look_back": 12,
+      "units_1": 32,
+      "units_2": 32
+    },
+    "mae_validacao_reais": 15.846501558621716,
+    "mae_atual_validacao_reais": 20.540168652534476
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "CNN",
+    "candidato": "atual",
+    "parametros": {
+      "look_back": 12,
+      "learning_rate": 0.0003,
+      "epochs": 150,
+      "filters": 24
+    },
+    "mae_validacao_reais": 16.095952739715568,
+    "mae_atual_validacao_reais": 16.095952739715568
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "DLinear",
+    "candidato": "ajuste_3",
+    "parametros": {
+      "epochs": 150,
+      "kernel_size": 25,
+      "learning_rate": 0.0001,
+      "look_back": 12
+    },
+    "mae_validacao_reais": 22.07006408373515,
+    "mae_atual_validacao_reais": null
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "RNN",
+    "candidato": "atual",
+    "parametros": {
+      "look_back": 12,
+      "learning_rate": 0.0003,
+      "epochs": 150,
+      "units": 24
+    },
+    "mae_validacao_reais": 34.183114485144614,
+    "mae_atual_validacao_reais": 34.183114485144614
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "LSTM",
+    "candidato": "ajuste_3",
+    "parametros": {
+      "epochs": 100,
+      "learning_rate": 0.001,
+      "look_back": 12,
+      "units_1": 32,
+      "units_2": 32
+    },
+    "mae_validacao_reais": 56.27525536557039,
+    "mae_atual_validacao_reais": 65.06747928698859
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "CNN",
+    "candidato": "atual",
+    "parametros": {
+      "look_back": 12,
+      "learning_rate": 0.0003,
+      "epochs": 150,
+      "filters": 24
+    },
+    "mae_validacao_reais": 50.8529624346892,
+    "mae_atual_validacao_reais": 50.8529624346892
+  },
+  {
+    "cidade": "ilheus",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "DLinear",
+    "candidato": "ajuste_3",
+    "parametros": {
+      "epochs": 150,
+      "kernel_size": 25,
+      "learning_rate": 0.0001,
+      "look_back": 12
+    },
+    "mae_validacao_reais": 34.37352048893769,
+    "mae_atual_validacao_reais": null
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "RNN",
+    "candidato": "ajuste_3",
+    "parametros": {
+      "epochs": 150,
+      "learning_rate": 0.0001,
+      "look_back": 12,
+      "units": 24
+    },
+    "mae_validacao_reais": 13.260072296460464,
+    "mae_atual_validacao_reais": 13.334832790692644
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "LSTM",
+    "candidato": "atual",
+    "parametros": {
+      "look_back": 12,
+      "learning_rate": 0.0003,
+      "epochs": 150,
+      "units_1": 32,
+      "units_2": 32
+    },
+    "mae_validacao_reais": 11.339219996134451,
+    "mae_atual_validacao_reais": 11.339219996134451
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "CNN",
+    "candidato": "ajuste_1",
+    "parametros": {
+      "epochs": 50,
+      "filters": 48,
+      "learning_rate": 0.0003,
+      "look_back": 24
+    },
+    "mae_validacao_reais": 13.993231461842868,
+    "mae_atual_validacao_reais": 17.337069735527034
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 3,
+    "modelo": "DLinear",
+    "candidato": "ajuste_4",
+    "parametros": {
+      "epochs": 100,
+      "kernel_size": 25,
+      "learning_rate": 0.001,
+      "look_back": 12
+    },
+    "mae_validacao_reais": 14.52283780097961,
+    "mae_atual_validacao_reais": null
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "RNN",
+    "candidato": "atual",
+    "parametros": {
+      "look_back": 12,
+      "learning_rate": 0.0003,
+      "epochs": 150,
+      "units": 24
+    },
+    "mae_validacao_reais": 25.670430451830228,
+    "mae_atual_validacao_reais": 25.670430451830228
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "LSTM",
+    "candidato": "ajuste_4",
+    "parametros": {
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "look_back": 12,
+      "units_1": 16,
+      "units_2": 16
+    },
+    "mae_validacao_reais": 35.09171003878117,
+    "mae_atual_validacao_reais": 40.878351656397186
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "CNN",
+    "candidato": "atual",
+    "parametros": {
+      "look_back": 12,
+      "learning_rate": 0.0003,
+      "epochs": 150,
+      "filters": 24
+    },
+    "mae_validacao_reais": 33.60553792953492,
+    "mae_atual_validacao_reais": 33.60553792953492
+  },
+  {
+    "cidade": "itabuna",
+    "produto": "cesta_basica",
+    "horizonte": 12,
+    "modelo": "DLinear",
+    "candidato": "ajuste_4",
+    "parametros": {
+      "epochs": 100,
+      "kernel_size": 25,
+      "learning_rate": 0.001,
+      "look_back": 12
+    },
+    "mae_validacao_reais": 32.48128240386645,
+    "mae_atual_validacao_reais": null
+  }
+]

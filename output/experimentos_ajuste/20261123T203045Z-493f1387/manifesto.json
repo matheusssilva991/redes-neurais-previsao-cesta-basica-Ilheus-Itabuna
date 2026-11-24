@@ -1,0 +1,318 @@
+{
+  "status": "concluido",
+  "inicio_utc": "2026-11-23T20:30:45.602496+00:00",
+  "smoke": false,
+  "semente": 42,
+  "tentativas_por_modelo": 4,
+  "lote_keras": 1,
+  "backend_keras": "tensorflow",
+  "dispositivo_keras": "/job:localhost/replica:0/task:0/device:CPU:0",
+  "fator_normalizacao_keras": 1000,
+  "cnn_parametros_fixos": {
+    "kernel_size": 3,
+    "pool_size": 2,
+    "dense_units": 15
+  },
+  "versoes": {
+    "python": "3.12.12",
+    "numpy": "2.3.4",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.7.2",
+    "keras": "3.12.0",
+    "tensorflow": "2.20.0"
+  },
+  "planilha": "/home/matheus/workspace/previsao_cestas/data/precos_mensais.xlsx",
+  "planilha_sha256": "fdfd9fa8fc0d0561ba25a5dbe5b587388bfd0e525ee4ce7c4d4c42994cd34546",
+  "avaliacoes": [
+    {
+      "cidade": "ilheus",
+      "produto": "cesta_basica",
+      "horizonte": 3,
+      "inicio_serie": "2005-01",
+      "fim_serie": "2026-10",
+      "origens_validacao": [
+        "2023-10",
+        "2024-01",
+        "2024-04",
+        "2024-07"
+      ],
+      "origens_teste": [
+        "2024-10",
+        "2025-01",
+        "2025-04",
+        "2025-07",
+        "2025-10",
+        "2026-01",
+        "2026-04",
+        "2026-07"
+      ]
+    },
+    {
+      "cidade": "ilheus",
+      "produto": "cesta_basica",
+      "horizonte": 12,
+      "inicio_serie": "2005-01",
+      "fim_serie": "2026-10",
+      "origens_validacao": [
+        "2020-10",
+        "2021-10",
+        "2022-10",
+        "2023-10"
+      ],
+      "origens_teste": [
+        "2024-10",
+        "2025-10"
+      ]
+    },
+    {
+      "cidade": "itabuna",
+      "produto": "cesta_basica",
+      "horizonte": 3,
+      "inicio_serie": "2005-01",
+      "fim_serie": "2026-10",
+      "origens_validacao": [
+        "2023-10",
+        "2024-01",
+        "2024-04",
+        "2024-07"
+      ],
+      "origens_teste": [
+        "2024-10",
+        "2025-01",
+        "2025-04",
+        "2025-07",
+        "2025-10",
+        "2026-01",
+        "2026-04",
+        "2026-07"
+      ]
+    },
+    {
+      "cidade": "itabuna",
+      "produto": "cesta_basica",
+      "horizonte": 12,
+      "inicio_serie": "2005-01",
+      "fim_serie": "2026-10",
+      "origens_validacao": [
+        "2020-10",
+        "2021-10",
+        "2022-10",
+        "2023-10"
+      ],
+      "origens_teste": [
+        "2024-10",
+        "2025-10"
+      ]
+    }
+  ],
+  "candidatos": [
+    {
+      "modelo": "RNN",
+      "nome": "atual",
+      "parametros": {
+        "look_back": 12,
+        "learning_rate": 0.0003,
+        "epochs": 150,
+        "units": 24
+      }
+    },
+    {
+      "modelo": "RNN",
+      "nome": "ajuste_1",
+      "parametros": {
+        "epochs": 100,
+        "learning_rate": 0.0003,
+        "look_back": 24,
+        "units": 16
+      }
+    },
+    {
+      "modelo": "RNN",
+      "nome": "ajuste_2",
+      "parametros": {
+        "epochs": 50,
+        "learning_rate": 0.0003,
+        "look_back": 12,
+        "units": 24
+      }
+    },
+    {
+      "modelo": "RNN",
+      "nome": "ajuste_3",
+      "parametros": {
+        "epochs": 150,
+        "learning_rate": 0.0001,
+        "look_back": 12,
+        "units": 24
+      }
+    },
+    {
+      "modelo": "RNN",
+      "nome": "ajuste_4",
+      "parametros": {
+        "epochs": 150,
+        "learning_rate": 0.0001,
+        "look_back": 24,
+        "units": 16
+      }
+    },
+    {
+      "modelo": "LSTM",
+      "nome": "atual",
+      "parametros": {
+        "look_back": 12,
+        "learning_rate": 0.0003,
+        "epochs": 150,
+        "units_1": 32,
+        "units_2": 32
+      }
+    },
+    {
+      "modelo": "LSTM",
+      "nome": "ajuste_1",
+      "parametros": {
+        "epochs": 50,
+        "learning_rate": 0.0003,
+        "look_back": 24,
+        "units_1": 16,
+        "units_2": 16
+      }
+    },
+    {
+      "modelo": "LSTM",
+      "nome": "ajuste_2",
+      "parametros": {
+        "epochs": 100,
+        "learning_rate": 0.0003,
+        "look_back": 24,
+        "units_1": 32,
+        "units_2": 32
+      }
+    },
+    {
+      "modelo": "LSTM",
+      "nome": "ajuste_3",
+      "parametros": {
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "look_back": 12,
+        "units_1": 32,
+        "units_2": 32
+      }
+    },
+    {
+      "modelo": "LSTM",
+      "nome": "ajuste_4",
+      "parametros": {
+        "epochs": 50,
+        "learning_rate": 0.0001,
+        "look_back": 12,
+        "units_1": 16,
+        "units_2": 16
+      }
+    },
+    {
+      "modelo": "CNN",
+      "nome": "atual",
+      "parametros": {
+        "look_back": 12,
+        "learning_rate": 0.0003,
+        "epochs": 150,
+        "filters": 24
+      }
+    },
+    {
+      "modelo": "CNN",
+      "nome": "ajuste_1",
+      "parametros": {
+        "epochs": 50,
+        "filters": 48,
+        "learning_rate": 0.0003,
+        "look_back": 24
+      }
+    },
+    {
+      "modelo": "CNN",
+      "nome": "ajuste_2",
+      "parametros": {
+        "epochs": 150,
+        "filters": 24,
+        "learning_rate": 0.001,
+        "look_back": 24
+      }
+    },
+    {
+      "modelo": "CNN",
+      "nome": "ajuste_3",
+      "parametros": {
+        "epochs": 50,
+        "filters": 24,
+        "learning_rate": 0.0001,
+        "look_back": 24
+      }
+    },
+    {
+      "modelo": "CNN",
+      "nome": "ajuste_4",
+      "parametros": {
+        "epochs": 100,
+        "filters": 48,
+        "learning_rate": 0.0003,
+        "look_back": 24
+      }
+    },
+    {
+      "modelo": "DLinear",
+      "nome": "ajuste_1",
+      "parametros": {
+        "epochs": 100,
+        "kernel_size": 25,
+        "learning_rate": 0.0001,
+        "look_back": 12
+      }
+    },
+    {
+      "modelo": "DLinear",
+      "nome": "ajuste_2",
+      "parametros": {
+        "epochs": 150,
+        "kernel_size": 25,
+        "learning_rate": 0.0001,
+        "look_back": 24
+      }
+    },
+    {
+      "modelo": "DLinear",
+      "nome": "ajuste_3",
+      "parametros": {
+        "epochs": 150,
+        "kernel_size": 25,
+        "learning_rate": 0.0001,
+        "look_back": 12
+      }
+    },
+    {
+      "modelo": "DLinear",
+      "nome": "ajuste_4",
+      "parametros": {
+        "epochs": 100,
+        "kernel_size": 25,
+        "learning_rate": 0.001,
+        "look_back": 12
+      }
+    },
+    {
+      "modelo": "Naive",
+      "nome": "referencia",
+      "parametros": {}
+    },
+    {
+      "modelo": "NaiveSazonal",
+      "nome": "referencia",
+      "parametros": {
+        "periodo": 12
+      }
+    }
+  ],
+  "fim_utc": "2026-11-24T00:02:40.800164+00:00"
+}
